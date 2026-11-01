@@ -12,78 +12,88 @@ import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import ErrorCard from "@/components/product/ErrorCard";
-import { clearUserKey, getUserKey, maskKey, setUserKey, userKeyHeaders } from "@/lib/user-key";
+
+type KeyStatus = {
+  serverKeyConfigured: boolean;
+  personalKeyStorage: "enabled" | "disabled";
+  personalKeyStorageNote: string;
+  personalKey: { set: boolean; masked?: string };
+  using: "personal" | "server";
+};
 
 function TinyFishKey() {
-  const [saved, setSaved] = useState<string | null>(null);
+  const [status, setStatus] = useState<KeyStatus | null>(null);
   const [draft, setDraft] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setSaved(getUserKey()), []);
 
-  async function test(): Promise<boolean> {
+  async function load() {
+    try {
+      const r = await fetch("/api/key", { cache: "no-store" });
+      setStatus((await r.json()) as KeyStatus);
+    } catch {
+      setMsg({ ok: false, text: "Could not load the key status." });
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function call(method: "POST" | "DELETE", body?: unknown) {
     setBusy(true);
     setMsg(null);
     try {
-      const r = await fetch("/api/key-check", { method: "POST", headers: userKeyHeaders() });
+      const r = await fetch("/api/key", { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
       const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: { message?: string } };
-      const ok = r.ok && j.ok === true;
-      setMsg({ ok, text: j.message ?? j.error?.message ?? (ok ? "Key works." : "Key check failed.") });
-      return ok;
-    } catch {
-      setMsg({ ok: false, text: "Could not reach the server to check the key." });
-      return false;
+      setMsg({ ok: r.ok && j.ok === true, text: j.message ?? j.error?.message ?? "Request failed." });
+      if (j.ok) setDraft("");
+      await load();
     } finally {
       setBusy(false);
     }
   }
-  async function save() {
-    const k = draft.trim();
-    if (!/^[A-Za-z0-9_\-.:]{16,200}$/.test(k)) {
-      setMsg({ ok: false, text: "That does not look like a TinyFish API key." });
-      return;
-    }
-    const prev = getUserKey();
-    setUserKey(k);
-    if (await test()) {
-      setSaved(k);
-      setDraft("");
-    } else if (prev) setUserKey(prev);
-    else clearUserKey();
-  }
-  function remove() {
-    clearUserKey();
-    setSaved(null);
-    setMsg({ ok: true, text: "Removed. Searches use the site's own TinyFish key again." });
-  }
 
+  const disabled = status?.personalKeyStorage === "disabled";
   return (
     <div className="space-y-3 text-sm">
-      <p className="text-muted">
-        Use your own TinyFish API key for searches from this browser, for example when the site's credits run out.
-        Get one at <a className="text-primary underline" href="https://agent.tinyfish.ai/api-keys" target="_blank" rel="noopener noreferrer">tinyfish.ai</a>.
-      </p>
-      <p>
-        Current key: <strong>{saved ? `Your key (${maskKey(saved)})` : "Site default"}</strong>
-      </p>
-      <form
-        className="flex flex-col gap-2 sm:flex-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
-        <label htmlFor="tf-key" className="sr-only">TinyFish API key</label>
-        <Input id="tf-key" type="password" autoComplete="off" spellCheck={false} placeholder={saved ? "Paste a new key to replace it" : "Paste your TinyFish API key"} value={draft} onChange={(e) => setDraft(e.target.value)} />
-        <Button type="submit" disabled={busy || !draft.trim()}>{busy ? "Checking..." : saved ? "Replace key" : "Save key"}</Button>
-        {saved && <Button type="button" variant="secondary" onClick={remove} disabled={busy}>Remove</Button>}
-        {saved && <Button type="button" variant="secondary" onClick={() => void test()} disabled={busy}>Test</Button>}
-      </form>
+      {!status ? (
+        <Skeleton className="h-16 w-full" />
+      ) : (
+        <ul className="divide-y divide-line">
+          <li className="flex justify-between gap-3 py-2"><span>Server key</span><strong>{status.serverKeyConfigured ? "Configured" : "Not configured"}</strong></li>
+          <li className="flex justify-between gap-3 py-2"><span>Your personal key</span><strong>{status.personalKey.set ? `Saved (${status.personalKey.masked})` : "Not set"}</strong></li>
+          <li className="flex justify-between gap-3 py-2"><span>Searches use</span><strong>{status.using === "personal" ? "Your key" : "Server default"}</strong></li>
+        </ul>
+      )}
+      {disabled ? (
+        <p className="rounded-xl border border-line p-3 text-warn">{status?.personalKeyStorageNote} Searches keep using the server key.</p>
+      ) : (
+        <>
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void call("POST", { action: "save", key: draft.trim() });
+            }}
+          >
+            <label htmlFor="tf-key" className="sr-only">TinyFish API key</label>
+            <Input id="tf-key" type="password" autoComplete="off" spellCheck={false} placeholder={status?.personalKey.set ? "Paste a new key to replace yours" : "Paste your TinyFish API key"} value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <Button type="submit" disabled={busy || !draft.trim()}>{busy ? "Testing..." : "Test & save"}</Button>
+          </form>
+          {status?.personalKey.set && (
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => void call("POST", { action: "test" })}>Test connection</Button>
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => void call("DELETE")}>Remove (use server default)</Button>
+            </div>
+          )}
+          <p className="text-xs text-muted">
+            {status?.personalKeyStorageNote} The key is tested with one free TinyFish Search before saving, used only for your own requests,
+            and never logged, shown again or saved in products/reports. Paid Agent steps on your key are billed to your TinyFish account.
+            Get a key at <a className="text-primary underline" href="https://agent.tinyfish.ai/api-keys" target="_blank" rel="noopener noreferrer">tinyfish.ai</a>.
+          </p>
+        </>
+      )}
       {msg && <p role="status" className={msg.ok ? "text-good" : "text-warn"}>{msg.ok ? "✓ " : "✕ "}{msg.text}</p>}
-      <p className="text-xs text-muted">
-        Stored only in this browser. It is sent over HTTPS with your searches, used only for that request, and never saved or logged on the server.
-        Paid Agent steps run on your key are billed to your TinyFish account. Do not use this on a shared computer.
-      </p>
     </div>
   );
 }
@@ -173,7 +183,7 @@ export default function SettingsPage() {
       </Card>
 
       <Card id="tinyfish-key">
-        <CardTitle>TinyFish API key</CardTitle>
+        <CardTitle>TinyFish connection</CardTitle>
         <div className="mt-3"><TinyFishKey /></div>
       </Card>
 
