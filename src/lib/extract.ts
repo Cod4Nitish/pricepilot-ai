@@ -1,3 +1,4 @@
+import { isWidgetTitle } from "./match";
 import { extractReturnPolicy, extractWarranty, parseStructuredProduct, structuredInrPrice } from "./structured";
 
 export interface Extracted {
@@ -64,7 +65,14 @@ function candidates(lines: string[]): Cand[] {
 
 const isStruck = (c: Cand) => /~~\s*$/.test(c.before) || /^~~/.test(c.after);
 const isMrp = (c: Cand) => MRP_MARK.test(c.before.slice(-25)) || isStruck(c);
-const isNoise = (c: Cand) => NOISE_NEAR.test(c.before.slice(-30)) || /^\s*(?:off|cashback|\/\s?mo|per month|emi|discount|instant)/i.test(c.after);
+const isNoise = (c: Cand) =>
+  NOISE_NEAR.test(c.before.slice(-30)) ||
+  /^\s*(?:off|cashback|\/\s?mo|per month|emi|discount|instant)/i.test(c.after) ||
+  // ranges such as "Phones Between Rs 50,001-70,000" (insurance/protection plans) are never a selling price
+  /^\s*[-–]\s*(?:₹|rs\.?)?\s*\d/i.test(c.after) ||
+  /\b(?:between|from|for phones|above|below|under)\s*$/i.test(c.before);
+/** Explicit selling-price markers (Amazon "One-time purchase: ₹X" / "₹X with 27 percent savings"). */
+const isStrongPrice = (c: Cand) => /one-time purchase:?\s*$/i.test(c.before) || /^\s*with \d+ percent savings/i.test(c.after);
 
 const RELATED_RE = /^\s*(?:#+\s*)?(?:\*\*)?(?:similar products|similar items|customers (?:also )?(?:viewed|bought)|related products|you may also like|sponsored|frequently bought together|recommended for you|people also (?:viewed|bought)|products related to this item|more from)/i;
 const NL = String.fromCharCode(10);
@@ -75,15 +83,44 @@ function cutRelated(text: string): string {
   return i > 0 ? lines.slice(0, i).join(NL) : text;
 }
 
-export function extractFromMarkdown(md: string, hint?: { title?: string; imageLinks?: string[] }): Extracted {
-  const text = md.replace(/\r/g, "");
+/** Remove sections under non-product H1 headings (Amazon "# Add to your order" insurance/add-on blocks). */
+export function dropJunkSections(text: string): string {
+  const out: string[] = [];
+  let skipping = false;
+  for (const l of text.split(NL)) {
+    if (/^#\s+\S/.test(l)) skipping = isWidgetTitle(l.replace(/^#+\s*/, ""));
+    if (!skipping) out.push(l);
+  }
+  return out.join(NL);
+}
+
+const BAD_IMG = /\.svg(?:$|\?)|\.gif(?:$|\?)|sprite|logo|pixel|uedata|fls-[a-z]+\.amazon|\/images\/G\/|\/images\/S\/|flixcart\.com\/www\/|promos|cms-|brand-images|icon|badge|banner|placeholder|play-icon/i;
+/** Declared pixel size of a retailer CDN image URL, if the URL encodes one. */
+function declaredSize(u: string): number | null {
+  const fk = /\/image\/(\d+)\/(\d+)\//.exec(u);
+  if (fk) return Math.min(Number(fk[1]), Number(fk[2]));
+  const sizes = [...u.matchAll(/[._](?:SL|SX|SY|SS|UL|UX|UY|AC_SL|AC_SX|AC_SY)(\d{2,4})/g)].map((m) => Number(m[1]));
+  return sizes.length ? Math.min(...sizes) : null;
+}
+/** The main product photo: no logos/sprites/promos/tracking pixels/tiny thumbnails; on Amazon the largest gallery image. */
+export function pickProductImage(urls: string[]): string | undefined {
+  const ok = urls.filter((u) => /^https:\/\//.test(u) && !BAD_IMG.test(u)).filter((u) => (declaredSize(u) ?? 300) >= 200);
+  if (!ok.length) return undefined;
+  const amazon = ok.filter((u) => /media-amazon\.com\/images\/I\//.test(u));
+  if (amazon.length) return [...amazon].sort((a, b) => (declaredSize(b) ?? 0) - (declaredSize(a) ?? 0))[0];
+  return ok[0];
+}
+
+export function extractFromMarkdown(md: string, hint?: { title?: string; description?: string; imageLinks?: string[] }): Extracted {
+  const text = dropJunkSections(md.replace(/\r/g, ""));
   const lines = text.split("\n");
   const cands = candidates(lines);
 
-  // Price: prefer candidates on/near "Buy"/"Deal"/"Price" lines, never MRP/EMI/offer noise.
+  // Price: explicit selling-price markers first, then candidates on/near "Buy"/"Deal"/"Price" lines; never MRP/EMI/offer noise.
   const clean = cands.filter((c) => !isMrp(c) && !isNoise(c));
+  const strong = clean.find(isStrongPrice);
   const preferred = clean.find((c) => /\bbuy\b|deal( price)?|\bprice\b|with offer|selling price/i.test(c.before.slice(-25) + " " + c.lineText.slice(0, 40)));
-  const priceC = preferred ?? clean[0];
+  const priceC = strong ?? preferred ?? clean[0];
   const price = priceC?.value ?? null;
 
   // MRP: marked candidate greater than price, nearest to the price candidate.
@@ -97,9 +134,12 @@ export function extractFromMarkdown(md: string, hint?: { title?: string; imageLi
 
   // Title
   let title: string | null = null;
-  const h1 = lines.find((l) => /^#\s+\S/.test(l));
-  if (h1) title = h1.replace(/^#+\s*/, "").trim();
-  if (!title && hint?.title) title = hint.title.trim();
+  const h1 = lines.map((l) => (/^#\s+\S/.test(l) ? l.replace(/^#+\s*/, "").trim() : "")).find((t) => t && !isWidgetTitle(t));
+  if (h1) title = h1;
+  if (!title && hint?.title && !isWidgetTitle(hint.title)) title = hint.title.trim();
+  // Amazon's meta description carries the full variant: "<title> (Colour, 8GB, 128GB Storage) : Amazon.in: Electronics"
+  const desc = hint?.description?.replace(/\s*:\s*Amazon\.in\b.*$/i, "").trim();
+  if (desc && desc !== hint?.description?.trim() && (!title || desc.toLowerCase().startsWith(title.toLowerCase().slice(0, 20)))) title = desc;
   if (title) title = title.replace(/\s+/g, " ").slice(0, 300);
 
   // Availability: only the main product region counts (not "similar products" carousels); conflicting signals => unknown
@@ -123,8 +163,8 @@ export function extractFromMarkdown(md: string, hint?: { title?: string; imageLi
   }
 
   // Image
-  const imgMd = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/.exec(text);
-  const imageUrl = imgMd?.[1] ?? hint?.imageLinks?.find((u) => /^https?:\/\//.test(u));
+  const mdImgs = [...text.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)].map((m) => m[1]);
+  const imageUrl = pickProductImage([...mdImgs, ...(hint?.imageLinks ?? [])]);
 
   const evidence = priceC ? priceC.lineText.replace(/\s+/g, " ").trim().slice(0, 200) : undefined;
 

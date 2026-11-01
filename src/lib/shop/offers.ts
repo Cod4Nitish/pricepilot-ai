@@ -4,6 +4,7 @@
 import { fromEcommerceOffer } from "@/lib/engine/adapters";
 import { compareEcommerce } from "@/lib/engine/ecommerce/pipeline";
 import { discountPct } from "@/lib/extract";
+import { isAccessoryTitle } from "@/lib/match";
 import { searchProducts } from "@/lib/search";
 import type { Offer, RetailerStatus, SearchResponse } from "@/lib/types";
 import type { ConditionalOffer, DeliveryInfo, ShopOffer, SourceStatus } from "./types";
@@ -54,7 +55,8 @@ function mapStatus(s: RetailerStatus): SourceStatus {
 export async function buildOffers(productQuery: string, ctx: BuildOffersCtx, deps: BuildOffersDeps = {}): Promise<BuildOffersResult> {
   const search = deps.search ?? ((q: string) => searchProducts(q));
   const sr = await search(productQuery);
-  const raw: Offer[] = [...sr.offers, ...sr.excluded];
+  // Accessories sharing the device name (cases, protectors...) are not the product: dropped, like search-side junk rows.
+  const raw: Offer[] = [...sr.offers, ...sr.excluded].filter((o) => !isAccessoryTitle(o.title));
   const rawByUrl = new Map<string, Offer>();
   for (const o of raw) rawByUrl.set(o.url, o);
 

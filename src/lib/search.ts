@@ -336,7 +336,7 @@ async function runPipeline(
     if (!page?.text) {
       return { c, title: c.searchTitle, price: null, mrp: null, availability: "unknown", offers: [], extra: {}, verification: "unverified", fetched: false };
     }
-    const ex = extractFromMarkdown(page.text, { title: page.title, imageLinks: page.image_links });
+    const ex = extractFromMarkdown(page.text, { title: page.title, description: page.description, imageLinks: page.image_links });
     return {
       c,
       title: richerTitle(ex.title ?? page.title ?? c.searchTitle, c.searchTitle),
@@ -585,7 +585,7 @@ export async function searchProducts(
         const why = page.errors[0]?.error ?? "no content";
         throw new SearchInputError(`Could not read that product page (${why}).`);
       }
-      const ex = extractFromMarkdown(p.text, { title: p.title, imageLinks: p.image_links });
+      const ex = extractFromMarkdown(p.text, { title: p.title, description: p.description, imageLinks: p.image_links });
       const title = ex.title ?? p.title ?? "";
       if (!title) throw new SearchInputError("Could not determine the product title from that link.");
       parsed = parseQuery(title);
