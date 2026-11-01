@@ -1,35 +1,34 @@
-# HANDOFF: PricePilot AI (state saved 2026-11-01)
+# HANDOFF: PricePilot AI (saved 2026-11-01, end of hackathon day)
 
-Read `CLAUDE.md` first (rules). This file says where the work stands so any session can continue.
+Read `CLAUDE.md` first. Everything below is committed, pushed (`main` = `wip/shop-engine`) and deployed.
 
-## Live and repo
-- Live (OLD build, before theme/shop work): https://pricepilot-ai-sigma.vercel.app. Vercel project `pricepilot-ai`, team `nitish-team`. Deployment protection is off. TinyFish + Anthropic keys are set in Vercel production env (secret). Supabase NOT connected yet.
-- GitHub: Cod4Nitish/pricepilot-ai. `main` = last deployed state. Branch `wip/shop-engine` = everything below (work in progress).
-- Preview locally: `NEXT_DIST_DIR=.next-qa npx next dev -p 3200` then http://localhost:3200. Local keys live in `.env.local` (gitignored). User wants to approve on localhost BEFORE any production deploy.
+## Live
+- https://pricepilot-ai-sigma.vercel.app (Vercel project `pricepilot-ai`, team `nitish-team`). Deploy: `vercel deploy --prod --yes`.
+- Production env (Vercel, secret): TINYFISH_API_KEY, ANTHROPIC_API_KEY, PP_KEY_SECRET (personal-key encryption),
+  PP_AGENT_MAX_PER_SEARCH=1, PP_AGENT_MAX_DURATION_S=40, PP_AGENT_TIMEOUT_MS=45000. Supabase NOT connected.
 
-## Done (verified)
-- Portfolio-style flat theme + light 3D utilities (`globals.css`), top navbar, one smart search (type + voice), Uber-style location ask (`/api/geo/pincode`), automatic E-Commerce/Quick routing (`/api/intent`).
-- Fast Commerce (Blinkit/Zepto) + Live Deal Battle (`/fast`, `/battle`), unified engine (`src/lib/engine`, `/api/engine/query`).
-- Query A "Samsung Galaxy S24 256GB" tested with real TinyFish: Flipkart Rs 53,199 verified (Croma price unreadable, Amazon offers excluded).
-- Universal search backend: `src/lib/shop/*` (parser, discovery, pipeline, offers, decision), `/api/shop`, `/api/shop/delivery`, `/api/shop/run/[id]`; UI `/shop` + `src/components/shop/*` (tested with dev-only `?mock=1`).
-- Tests: ~256 passing (`npx vitest run`), `npx tsc --noEmit` clean at last check.
+## Working (verified live with real searches)
+- /shop engine for all e-commerce searches (homepage + /discover forward there). Intents: recommendation, feature,
+  exact, comparison, URL. Budget bands + gaming/camera/battery/student.
+- Category configs: smartphone, laptop, headphones, tv. Any other category -> generic search fallback
+  (pipeline.ts `generic()`), listings as product cards, verified first.
+- Strict requirements (src/lib/shop/requirements.ts): requested brand + product type enforced at candidate, offer,
+  final stages. "sony wireless headphone under 5000" -> Sony WH-CH520 Rs 2,690.
+- Cost-aware routing (search.ts, tinyfish.ts, cost/*): Fetch first, paid Agent only when justified, early stop at 2
+  verified retailers, 429 Retry-After/cooldown, metered num_of_steps, /api/cost, per-request usage.
+- TrueCost (engine/ecommerce/truecost.ts), Deal Receipt (receipts/build.ts), Research Cost panel, live Research Monitor
+  (POST /api/shop {stream:true} NDJSON), Save product / Save research (IndexedDB, /saved, zero API on reopen).
+- Personal TinyFish key: Settings > TinyFish connection (AES-GCM httpOnly cookie, /api/key).
+- Mobile UX pass, PWA manifest/SW v2 (never caches /api), homepage SVG hero + category cards.
+- Tests: 368 passing (`npx vitest run`), tsc clean, build OK.
 
-## LATEST STATUS (updated just before the Claude usage limit)
-- Query B re-tested with real TinyFish after guards: PASS-ish. 1 pick, Google Pixel 10A, Flipkart Rs 48,499 verified, 7 offers, score 51.6 (camera/display/software missing, honest). No absurd prices anymore.
-- Query C: parser + LLM extraction OK; waiting on agent D's engine fix (laptop GPU = spec, not model) in src/lib/engine/ecommerce/{entity,resolve}.ts + src/lib/match.ts. Last `tsc` showed `src/lib/match.ts(101): Cannot find name 'sp'` = agent D was mid-edit: FIX THIS FIRST (`npx tsc --noEmit`), then run `npx vitest run`, then re-test C: `python /tmp/shopq.py "Gaming laptop RTX 4050 under 70000"` (script: POST localhost:3200/api/shop, prints groups/prices; recreate if /tmp was cleared).
-- Pending user decisions: Supabase terms, which account to switch to, approval to deploy after localhost preview.
+## Not done / known limits
+- Local price monitor: code in src/components/saved/{LocalPriceMonitor,PriceMonitorPanel}.tsx but NOT mounted (untested).
+- Budget Rescue not built. Monitor category not added.
+- Generic categories: many cards unverified (fetch shows no price; agent capped at 1).
+- Croma/Reliance/Vijay prices rarely readable. Shipping rarely shown -> totals are minimums.
+- Saved data is per-browser only. Offline SW behaviour not verified in a real browser.
+- Research cost panel buttons stack tall on mobile; settings "tinyfish.ai" link small.
 
-## Known problems (older notes, partly fixed above)
-1. Query B "Best phone under 50000": discovery works, but offer prices were implausible (Rs 274 / 128 / 3,199: accessories/EMI numbers). Guards + honest scoring (score null unless >= 50% evidence) were requested from the P agent. RE-TEST.
-2. Query C "Gaming laptop RTX 4050 under 70000": parsed correctly, LLM extraction fixed, but no verified store prices: (a) retailer lookups used long part numbers, (b) engine rejected real "MSI Katana 15" offers because GPU "4050" was treated as a model number (agent D was asked to treat GPU as a spec). RE-TEST.
-3. Croma price not readable (agent fallback with `stealth` untested), Reliance/Vijay mostly no results, stock often "unknown".
-4. Blinkit/Zepto pincode flow never tested live.
-
-## Not done yet
-- Supabase (user must run `vercel integration accept-terms supabase` interactively, or give URL + anon + service_role keys; then run `supabase/migrations/0001_init.sql`).
-- Live Deal Battle for e-commerce products, Lighthouse/axe measurements (docs/visual-qa.md says NOT MEASURED), docs/screenshots refresh, README update for new features.
-- Final: typecheck + tests + `NEXT_DIST_DIR=.next-check npx next build`, show on localhost, user approves, then `vercel deploy --prod --yes` and verify the live URL.
-
-## Commands
-- Real-query harness used for testing: POST `http://localhost:3200/api/shop` `{"query": "..."}` (needs `.env.local` TINYFISH_API_KEY; consumes credits).
-- Never commit `.env*`, `.next*`, `.claude/`, logs.
+## Measured (README has the table/chart)
+- Legacy vs adaptive routing, 3 queries: 6 agent runs / 43 steps / $0.688 -> 0 / 0 / $0.
