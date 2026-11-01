@@ -25,7 +25,7 @@ export function Tabs<T extends string>({
     (e.currentTarget.parentElement?.children[n] as HTMLElement | undefined)?.focus();
   }
   return (
-    <div role="tablist" aria-label={label} className="inline-flex rounded-xl border border-line bg-surface2 p-1">
+    <div role="tablist" aria-label={label} className="inline-flex rounded-xl border border-line-strong bg-surface2 p-1">
       {items.map((it, i) => (
         <button
           key={it.value}
@@ -35,8 +35,8 @@ export function Tabs<T extends string>({
           onKeyDown={(e) => onKey(e, i)}
           onClick={() => onChange(it.value)}
           className={cn(
-            "h-9 cursor-pointer rounded-lg px-4 text-sm font-medium transition-colors",
-            value === it.value ? "gradient-bg text-white shadow" : "text-muted hover:text-fg",
+            "h-10 min-w-11 cursor-pointer rounded-lg px-4 text-sm font-medium transition-colors",
+            value === it.value ? "gradient-bg shadow" : "text-muted hover:text-fg",
           )}
         >
           {it.label}

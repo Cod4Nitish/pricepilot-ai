@@ -20,7 +20,7 @@ export function RunProgress({ runId }: { runId: string }) {
   if (isError || !data) return null;
   return (
     <details className="rounded-xl border border-line bg-surface p-3 text-sm">
-      <summary className="cursor-pointer font-medium">
+      <summary className="flex min-h-11 cursor-pointer items-center gap-2 font-medium">
         Agent run <Badge tone={data.status === "failed" ? "bad" : data.status === "completed" ? "good" : "brand"}>{data.status}</Badge>
       </summary>
       {data.error && <p className="mt-2 text-bad">{data.error}</p>}
@@ -39,6 +39,11 @@ export function RunProgress({ runId }: { runId: string }) {
 
 export default function SearchResults({ data, showRun = true }: { data: SearchResponse; showRun?: boolean }) {
   const best = data.bestVerified;
+  const verifiedPrices = data.offers
+    .filter((o) => (o.verification === "verified" || o.verification === "agent_verified") && o.price !== null)
+    .map((o) => o.price as number);
+  const saving = best && best.price !== null && verifiedPrices.length > 1 ? Math.max(...verifiedPrices) - best.price : null;
+  const ok = saving !== null && saving > 0 ? saving : null;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -50,14 +55,19 @@ export default function SearchResults({ data, showRun = true }: { data: SearchRe
       </div>
 
       {best ? (
-        <Card className="border-primary/40 bg-gradient-to-br from-primary/10 to-accent/10">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary">
+        <section aria-labelledby="best-h" className="space-y-2">
+          <h2 id="best-h" className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-good">
             <Trophy className="h-4 w-4" aria-hidden /> Best verified price
-          </div>
-          <ProductCard offer={best} query={data.query} />
-        </Card>
+          </h2>
+          <ProductCard offer={best} query={data.query} best />
+          {ok !== null && (
+            <p className="inline-flex rounded-full border border-good/50 bg-good/10 px-3 py-1.5 text-sm font-semibold text-good">
+              You save {formatINR(ok)} vs the highest verified price in this search
+            </p>
+          )}
+        </section>
       ) : (
-        <Card className="border-warn/40">
+        <Card className="border-warn/60">
           <p className="flex items-center gap-2 font-display font-semibold">
             <AlertCircle className="h-5 w-5 text-warn" aria-hidden /> No verified price found
           </p>
@@ -88,7 +98,7 @@ export default function SearchResults({ data, showRun = true }: { data: SearchRe
         <section aria-label="All matching offers" className="space-y-4">
           <h2 className="font-display text-lg font-semibold">All matches, lowest price first</h2>
           {data.offers.map((o) => (
-            <ProductCard key={o.id} offer={o} query={data.query} />
+            <ProductCard key={o.id} offer={o} query={data.query} best={best?.id === o.id} />
           ))}
         </section>
       ) : (
@@ -99,7 +109,7 @@ export default function SearchResults({ data, showRun = true }: { data: SearchRe
 
       {data.excluded.length > 0 && (
         <details className="group rounded-2xl border border-line bg-surface p-4">
-          <summary className="flex cursor-pointer list-none items-center justify-between font-display font-semibold">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-display font-semibold">
             <span>Excluded / low-confidence matches ({data.excluded.length})</span>
             <ChevronDown className="h-5 w-5 transition-transform group-open:rotate-180" aria-hidden />
           </summary>

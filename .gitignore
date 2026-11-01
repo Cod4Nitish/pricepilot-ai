@@ -9,6 +9,6 @@ next-env.d.ts
 coverage
 dev.log
 *.log
-
-.vercel
-.env*
+.claude/
+skills-lock.json
+supabase/.temp/

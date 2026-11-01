@@ -21,7 +21,7 @@ export default function BasketPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold">Smart Basket</h1>
+        <h1 className="font-display text-h1 font-bold">Smart Basket</h1>
         <p className="text-sm text-muted">Add several products. We find the cheapest verified combination across stores, including delivery where known.</p>
       </div>
 

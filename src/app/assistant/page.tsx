@@ -38,7 +38,7 @@ export default function AssistantPage() {
   return (
     <div className="flex min-h-[calc(100dvh-14rem)] flex-col gap-4">
       <div>
-        <h1 className="flex items-center gap-2 font-display text-2xl font-bold"><Sparkles className="h-6 w-6 text-accent" aria-hidden /> Assistant</h1>
+        <h1 className="flex items-center gap-2 font-display text-h1 font-bold"><Sparkles className="h-6 w-6 text-accent" aria-hidden /> Assistant</h1>
         <p className="text-sm text-muted">Ask for a product or a comparison. Answers come from live search results, not memory.</p>
       </div>
 
@@ -65,7 +65,7 @@ export default function AssistantPage() {
           e.preventDefault();
           send();
         }}
-        className="sticky bottom-20 flex gap-2 rounded-2xl border border-line bg-bg/90 p-2 backdrop-blur-xl lg:bottom-4"
+        className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] flex gap-2 rounded-2xl border border-line-strong bg-surface p-2 lg:bottom-4"
       >
         <label htmlFor="chat-in" className="sr-only">Message</label>
         <input
@@ -73,7 +73,7 @@ export default function AssistantPage() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Ask about a product…"
-          className="h-11 flex-1 rounded-xl bg-transparent px-3 text-sm placeholder:text-muted focus:outline-none"
+          className="h-11 flex-1 rounded-xl bg-transparent px-3 text-base sm:text-sm placeholder:text-muted focus:outline-none"
         />
         <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim() || chat.isPending}><Send className="h-4 w-4" /></Button>
       </form>

@@ -82,7 +82,7 @@ export default function WatchlistPage() {
   }
   return (
     <div className="space-y-6">
-      <h1 className="font-display text-2xl font-bold">Watchlist</h1>
+      <h1 className="font-display text-h1 font-bold">Watchlist</h1>
       <form
         className="flex gap-2"
         onSubmit={(e) => {

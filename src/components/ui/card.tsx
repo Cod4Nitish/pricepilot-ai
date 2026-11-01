@@ -1,11 +1,19 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+/** Surface card. `level` maps to the elevation tokens (surface-1..3). */
+export function Card({
+  className,
+  level = 1,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & { level?: 1 | 2 | 3 }) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-line bg-gradient-to-b from-surface to-surface/70 p-4 shadow-sm backdrop-blur sm:p-5",
+        "rounded-2xl border border-line p-4 shadow-card sm:p-5",
+        level === 1 && "bg-surface",
+        level === 2 && "bg-surface2",
+        level === 3 && "bg-surface3",
         className,
       )}
       {...props}

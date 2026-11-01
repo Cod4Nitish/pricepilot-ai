@@ -136,13 +136,21 @@ export default function InstallPrompt() {
     setHidden(true);
   };
 
+  const visible = !(hidden || (!deferred && !ios));
+  // Tell the layout to reserve space so the prompt never covers primary content.
+  useEffect(() => {
+    if (!visible) return;
+    document.documentElement.setAttribute("data-install", "");
+    return () => document.documentElement.removeAttribute("data-install");
+  }, [visible]);
+
   // Render only when there is something actionable.
-  if (hidden || (!deferred && !ios)) return null;
+  if (!visible) return null;
 
   return (
     <aside
       aria-label="Install PricePilot"
-      className="fixed inset-x-3 bottom-4 z-50 mx-auto max-w-md rounded-2xl border border-[#3a4a85] bg-gradient-to-br from-[#0F1A3A] to-[#1a1240] p-4 text-white shadow-2xl"
+      className="fixed inset-x-2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto max-w-md rounded-2xl border border-[#3a4a85] bg-[#0F1A3A] p-3 text-white shadow-2xl lg:inset-x-auto lg:bottom-4 lg:right-4 lg:mx-0 lg:w-80 lg:p-4"
     >
       <div className="flex items-start gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -167,7 +175,7 @@ export default function InstallPrompt() {
             <button
               type="button"
               onClick={install}
-              className="mt-3 rounded-lg bg-gradient-to-r from-[#2D8CFF] to-[#9B5CFF] px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              className="mt-2 min-h-11 rounded-lg bg-gradient-to-r from-[#2D8CFF] to-[#9B5CFF] px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               Install app
             </button>
@@ -177,7 +185,7 @@ export default function InstallPrompt() {
           type="button"
           onClick={dismiss}
           aria-label="Dismiss install prompt"
-          className="rounded-md p-1 text-slate-400 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-slate-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M6 6l12 12M18 6L6 18" />
