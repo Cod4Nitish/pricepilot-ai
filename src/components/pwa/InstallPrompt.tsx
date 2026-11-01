@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+
+// Never shown while the user is reviewing results or saved research (it would cover product information).
+const QUIET_ROUTES = /^\/(?:shop|saved|discover|search|product|battle|fast)(?:\/|$)/;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -88,6 +92,8 @@ export function InstallInstructions({ className = "" }: { className?: string }) 
 }
 
 export default function InstallPrompt() {
+  const pathname = usePathname() ?? "/";
+  const quiet = QUIET_ROUTES.test(pathname);
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [ios, setIos] = useState(false);
   const [hidden, setHidden] = useState(true);
@@ -136,7 +142,7 @@ export default function InstallPrompt() {
     setHidden(true);
   };
 
-  const visible = !(hidden || (!deferred && !ios));
+  const visible = !quiet && (!(hidden || (!deferred && !ios)));
   // Tell the layout to reserve space so the prompt never covers primary content.
   useEffect(() => {
     if (!visible) return;
