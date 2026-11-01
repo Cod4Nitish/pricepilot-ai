@@ -73,9 +73,24 @@ function inr(n: number): string {
   return `₹${n.toLocaleString("en-IN")}`;
 }
 
+/** Strip retailer page-title boilerplate ("Buy ... Online - Croma", "... Online at Best Price On Flipkart.com"). */
+export function cleanProductTitle(t: string): string {
+  return t
+    .replace(/\s*[|:-]\s*(?:croma|vijay sales|reliance digital|flipkart(?:\.com)?|amazon\.in)\b.*$/i, "")
+    .replace(/\s+online at best price.*$/i, "")
+    .replace(/\s+online\s*$/i, "")
+    .replace(/^\s*buy\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const RETAILER_LABEL: Record<string, string> = { amazon: "Amazon.in", flipkart: "Flipkart", croma: "Croma", reliance: "Reliance Digital", vijay: "Vijay Sales" };
+const isPriceVerified = (o: ShopOffer) => (o.verificationStatus === "verified" || o.verificationStatus === "agent_verified") && o.listedPrice !== null;
+
+/** Display name from the most trustworthy offer: price-verified first, then match confidence. */
 function bestName(offers: ShopOffer[], fallback: string): string {
-  const o = [...offers].sort((a, b) => b.matchingConfidence - a.matchingConfidence)[0];
-  return o?.productName?.trim() || fallback;
+  const o = [...offers].sort((a, b) => Number(isPriceVerified(b)) - Number(isPriceVerified(a)) || b.matchingConfidence - a.matchingConfidence)[0];
+  return (o?.productName && cleanProductTitle(o.productName)) || fallback;
 }
 
 function fmt(f: SpecFact): string {
@@ -188,9 +203,14 @@ async function exact(parsed: ParsedQuery, ctx: Ctx): Promise<ShopResponse> {
   const { group, statuses, reason } = await offersGroup(query, p, ctx);
   if (!group) return emptyRes(ctx, reason ?? "No relevant verified results found.", statuses);
   const stores = new Set(group.offers.map((o) => o.retailer)).size;
+  const verified = group.offers.filter(isPriceVerified);
+  const verifiedStores = new Set(verified.map((o) => o.retailer)).size;
   const low = group.lowestVerified;
-  const parts = [`Found ${group.offers.length} verified offer(s) for "${group.name}" across ${stores} store(s).`];
-  if (low) parts.push(`Lowest verified listed price is ${inr(low.price)} at ${low.retailer}.`);
+  const parts = [
+    `Found ${group.offers.length} matching offer(s) for "${group.name}" across ${stores} store(s); ${verified.length} with a verified price at ${verifiedStores} store(s).`,
+  ];
+  if (verified.length < group.offers.length) parts.push(`${group.offers.length - verified.length} offer(s) could not be price-verified and are shown as unknown.`);
+  if (low) parts.push(`Lowest verified listed price is ${inr(low.price)} at ${RETAILER_LABEL[low.retailer] ?? low.retailer}.`);
   if (group.decision.singleStoreOnly) parts.push("Multi-store comparison is not possible yet: only one verified store offer was found.");
   parts.push("Delivery dates are not verified until you check them for your pincode.");
   return { ...ctx.base, groups: [group], statuses, recommendationProvisional: false, summary: parts.join(" "), emptyReason: null };
