@@ -39,10 +39,11 @@ async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promi
 export type ShopSort = "relevance" | "price" | "delivery";
 
 export function fetchShop(
-  args: { query: string; pincode?: string | null; weights?: Partial<ShopWeights>; sort?: ShopSort },
+  args: { query: string; pincode?: string | null; weights?: Partial<ShopWeights>; sort?: ShopSort; fresh?: boolean },
   signal?: AbortSignal,
 ): Promise<ShopResponse> {
   const body: Record<string, unknown> = { query: args.query };
+  if (args.fresh) body.fresh = true;
   if (args.pincode) body.pincode = args.pincode;
   if (args.weights) body.weights = args.weights;
   if (args.sort) body.sort = args.sort;

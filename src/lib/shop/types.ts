@@ -94,6 +94,8 @@ export interface ShopOffer extends UnifiedOffer {
   /** false => identity matched but some spec (GPU/CPU/RAM/storage) could not be confirmed from the listing title; listed, never "cheapest/best" */
   specConfirmed?: boolean;
   specNotes?: string[];
+  /** listed vs known-minimum vs confirmed payable total, with unknown components (see engine/ecommerce/truecost.ts) */
+  trueCost?: import("@/lib/engine/ecommerce/truecost").TrueCost;
 }
 
 export interface Pick {
@@ -130,6 +132,8 @@ export interface ProductGroup {
   comparable: boolean; // >= 2 verified retailers
   provisional: boolean;
   rank: number; // 1-based among groups
+  /** Cheapest Confirmed (fully known total) vs Lowest Listed vs Lowest Known Minimum */
+  trueCostVerdict?: import("@/lib/engine/ecommerce/truecost").TrueCostVerdict;
 }
 
 export interface SourceStatus {

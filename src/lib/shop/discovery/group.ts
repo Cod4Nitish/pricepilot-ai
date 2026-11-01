@@ -1,3 +1,4 @@
+import { trueCostVerdict } from "@/lib/engine/ecommerce/truecost";
 // ProductGroup assembly helpers shared by the pipeline and discovery.
 import type { Decision, ParsedQuery, Pick, ProductGroup, ProductScore, ShopOffer, ShopWeights, SourceStatus, SpecFact } from "../types";
 import { hostOf } from "./evidence";
@@ -134,6 +135,9 @@ export function makeGroup(g: GroupInput): ProductGroup {
     comparable: distinctRetailers(g.offers) >= 2,
     provisional: g.provisional ?? g.score?.provisional ?? false,
     rank: 0,
+    trueCostVerdict: trueCostVerdict(
+      g.offers.filter((o) => o.trueCost).map((o) => ({ offerId: o.sourceUrl, retailer: o.retailer, verificationStatus: o.verificationStatus, matchingConfidence: o.matchingConfidence, specConfirmed: o.specConfirmed, trueCost: o.trueCost! })),
+    ),
   };
 }
 

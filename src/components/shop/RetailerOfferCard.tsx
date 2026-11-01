@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import VerificationBadge from "@/components/product/VerificationBadge";
+import TrueCostBreakdown from "./TrueCostBreakdown";
 
 const STOCK = {
   in_stock: { label: "In stock", tone: "good" },
@@ -84,6 +85,8 @@ export default function RetailerOfferCard({
           <p className="text-muted">Payable total not verified (shipping or fees unknown).</p>
         )}
       </div>
+
+      {offer.trueCost && <TrueCostBreakdown tc={offer.trueCost} commerceMode={offer.commerceMode} />}
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
         <Row label="Shipping">{shippingLabel(offer.shippingFee)}</Row>

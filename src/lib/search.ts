@@ -486,6 +486,13 @@ async function runPipeline(
       return { c, title: id?.title ?? c.searchTitle, imageUrl: id?.imageUrl, price: null, mrp: null, availability: "unknown", offers: [], extra: {}, verification: "unverified", fetched: false };
     }
     const ex = extractFromMarkdown(page.text, { title: page.title, description: page.description, imageLinks: page.image_links });
+    // Retailers whose fetched page does not render the price (fetchHasPrice=false, e.g. Vijay Sales/Croma): any rupee
+    // number in the markdown is gift values, installation charges, exchange values... Trust only structured data there.
+    if (!c.retailer.fetchHasPrice && ex.price !== null && !ex.structuredSource) {
+      ex.price = null;
+      ex.mrp = null;
+      ex.evidence = undefined;
+    }
     return {
       c,
       title: richerTitle(ex.title ?? page.title ?? c.searchTitle, c.searchTitle),
@@ -618,7 +625,9 @@ async function runPipeline(
       }
       pool.push(w);
     }
-    const verifiedRetailers = () => new Set(work.filter((w) => w.price !== null && strongMatch(w)).map((w) => w.c.retailer.id));
+    // same rule as the final response: a price above the requested budget does not count as a usable verified offer
+    const usable = (w: Work) => w.price !== null && strongMatch(w) && (!parsed.maxPrice || w.price <= parsed.maxPrice);
+    const verifiedRetailers = () => new Set(work.filter(usable).map((w) => w.c.retailer.id));
     let started = 0;
     let stop: AgentSkipReason | null = null;
     for (;;) {

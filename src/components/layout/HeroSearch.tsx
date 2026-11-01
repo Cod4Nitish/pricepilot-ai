@@ -1,15 +1,16 @@
 import Link from "next/link";
 import SmartSearch from "./SmartSearch";
 
-const EXAMPLES = ["iPhone 15 128GB", "Sony WH-1000XM5", "boAt Airdopes 141", "Samsung 43 inch smart TV"];
+const EXAMPLES = ["Samsung Galaxy S24 256GB", "Best phone under ₹50K", "Gaming laptop under ₹70K"];
 
 /** Search-first hero: plain headline, one-line subtitle, the search box and example chips. */
 export default function HeroSearch() {
   return (
     <div className="mx-auto max-w-3xl text-center">
-      <h1 className="text-display font-semibold text-balance">Compare prices across Indian stores</h1>
+      <p className="eyebrow">Your AI shopping copilot</p>
+      <h1 className="mt-2 text-display font-semibold text-balance">Find better deals. Spend less. Decide better.</h1>
       <p className="mx-auto mt-3 max-w-2xl text-body text-muted">
-        Search by name or speak. We check online stores and quick-delivery apps and show how every price was verified.
+        One intelligent search. Real retailer evidence. Smarter buying decisions.
       </p>
       <div className="mt-6 text-left">
         <SmartSearch variant="hero" inputId="hero-search" />

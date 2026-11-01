@@ -66,3 +66,13 @@ describe("pickProductImage", () => {
     expect(pickProductImage(["https://example.com/logo.svg"])).toBeUndefined();
   });
 });
+
+describe("non-price rupee amounts (real pages, 2026-11-01)", () => {
+  it("ignores a free-gift value ('Worth₹3,199Free') and return-policy thresholds", () => {
+    const vijay = extractFromMarkdown("# HP Victus Gaming Laptop RTX 4050\n\nFree gift: Backpack Worth₹3,199Free\n\nOffer Price ₹69,990\n\nAdd to Cart");
+    expect(vijay.price).toBe(69990);
+    const amz = extractFromMarkdown("# ASUS Gaming V16 RTX 4050\n\n**For products worth more than INR 25000, we only offer Self-Return option.\n\n₹74,990.00 with 25 percent savings\n\nAdd to Cart");
+    expect(amz.price).toBe(74990);
+  });
+});
+

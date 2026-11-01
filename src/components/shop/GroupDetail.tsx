@@ -5,6 +5,7 @@ import { offerKey, sortOffers, type ShopSort } from "@/lib/shop-client";
 import { Button } from "@/components/ui/button";
 import DecisionPanel from "./DecisionPanel";
 import RetailerOfferCard from "./RetailerOfferCard";
+import { TrueCostVerdictPanel } from "./TrueCostBreakdown";
 
 export interface DeliveryUi {
   loading: Set<string>;
@@ -48,6 +49,7 @@ export default function GroupDetail({
   return (
     <div id={`detail-${group.id}`} className="space-y-4" tabIndex={-1}>
       <h3 className="font-display text-xl font-extrabold tracking-tight">Prices for {group.name}</h3>
+      {group.trueCostVerdict && <TrueCostVerdictPanel verdict={group.trueCostVerdict} />}
       <DecisionPanel group={group} weights={weights} pending={weightsPending} onApplyWeights={onApplyWeights} />
 
       <section aria-labelledby={`off-${group.id}`} className="space-y-3">

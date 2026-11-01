@@ -5,6 +5,7 @@ import { fromEcommerceOffer } from "@/lib/engine/adapters";
 import { compareEcommerce } from "@/lib/engine/ecommerce/pipeline";
 import { discountPct } from "@/lib/extract";
 import { isAccessoryTitle } from "@/lib/match";
+import { computeTrueCost } from "@/lib/engine/ecommerce/truecost";
 import { searchProducts } from "@/lib/search";
 import type { Offer, RetailerStatus, SearchResponse } from "@/lib/types";
 import type { ConditionalOffer, DeliveryInfo, ShopOffer, SourceStatus } from "./types";
@@ -102,6 +103,8 @@ export async function buildOffers(productQuery: string, ctx: BuildOffersCtx, dep
       effectiveTotal: e.pricing.effectiveTotal,
       totalIsLowerBound: e.pricing.totalIsLowerBound,
       delivery: defaultDelivery(ctx.pincode),
+      // from the page offer itself (NOT the user-card-adjusted one): a selected card never makes a discount "confirmed"
+      trueCost: computeTrueCost(e.offer),
     });
   }
   // Price plausibility: with >=3 verified prices, a price below 35% of the median is almost surely an accessory/other item.

@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, MapPin, Search, SearchX, Settings, WifiOff } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Loader2, MapPin, ReceiptText, RefreshCw, Search, SearchX, Settings, Wallet, WifiOff } from "lucide-react";
 import type { DeliveryInfo, ShopResponse, ShopWeights } from "@/lib/shop/types";
 import {
   badSources, fetchDelivery, fetchShop, mergeDelivery, offerKey, relativeTime, ShopApiError, sortGroups, sourceName, type ShopSort,
@@ -18,6 +18,8 @@ import ParsedChips from "./ParsedChips";
 import ProductRecommendationCard from "./ProductRecommendationCard";
 import GroupDetail, { ComparisonTable, type DeliveryUi } from "./GroupDetail";
 import { ShopLoading } from "./ShopSkeletons";
+import ResearchCostPanel from "./ResearchCostPanel";
+import DealReceipt from "./DealReceipt";
 
 const SORTS: { id: ShopSort; label: string }[] = [
   { id: "relevance", label: "Best match" },
@@ -112,8 +114,14 @@ export default function ShopView() {
 
   useEffect(() => setDraft(q), [q]);
 
+  const queryClient = useQueryClient();
+  const queryKey = ["shop", q, pin ?? null, weights, mockEnabled] as const;
+  const [costOpen, setCostOpen] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
+  const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
   const query = useQuery<ShopResponse, Error>({
-    queryKey: ["shop", q, pin ?? null, weights, mockEnabled],
+    queryKey,
     enabled: !!q && pin !== undefined,
     retry: false,
     staleTime: Infinity,
@@ -183,6 +191,26 @@ export default function ShopView() {
       });
     }
   }
+  async function recheckPrices() {
+    if (!q || rechecking) return;
+    setRechecking(true);
+    setRecheckMsg(null);
+    try {
+      if (mockEnabled) {
+        setRecheckMsg("Mock mode: no fresh check was sent. Mock data is unchanged.");
+        return;
+      }
+      const r = await fetchShop({ query: q, pincode: pin, weights: weights ?? undefined, fresh: true });
+      queryClient.setQueryData(queryKey, r);
+      setDMap({});
+      setRecheckMsg(r.cached ? "The server returned a cached result." : "Prices re-checked.");
+    } catch (e) {
+      setRecheckMsg(e instanceof Error ? `Re-check failed: ${e.message}` : "Re-check failed.");
+    } finally {
+      setRechecking(false);
+    }
+  }
+
   const deliveryUi: DeliveryUi = { loading: dLoading, error: dError };
 
   function openCompare(id: string) {
@@ -320,6 +348,44 @@ export default function ShopView() {
             <p className="rounded-xl border border-fg/30 bg-sun px-3 py-2 text-sm text-fg">
               <span className="font-bold">PROVISIONAL:</span> some key evidence is missing, so rankings may change as more is verified.
             </p>
+          )}
+
+          {groups.length > 0 && (
+            <div className="space-y-3 rounded-[1.1rem] border border-line bg-surface p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="secondary" onClick={recheckPrices} disabled={rechecking || query.isFetching || !online}>
+                  {rechecking ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <RefreshCw className="h-4 w-4" aria-hidden />}
+                  {rechecking ? "Re-checking..." : "Re-check prices now"}
+                </Button>
+                {data.usage && (
+                  <Button variant="secondary" aria-expanded={costOpen} aria-controls="research-cost" onClick={() => setCostOpen((v) => !v)}>
+                    <Wallet className="h-4 w-4" aria-hidden /> {costOpen ? "Hide research cost" : "Research cost"}
+                  </Button>
+                )}
+                {selected && (
+                  <Button variant="secondary" aria-expanded={receiptOpen} aria-controls="deal-receipt" onClick={() => setReceiptOpen((v) => !v)}>
+                    <ReceiptText className="h-4 w-4" aria-hidden /> {receiptOpen ? "Hide receipt" : "Deal receipt"}
+                  </Button>
+                )}
+              </div>
+              <p className="text-sm">
+                <span className="font-semibold">
+                  {data.cached ? "Cached" : data.usage?.freshCheck ? "Fresh check" : "Live"}
+                </span>
+                <span className="text-muted">
+                  {data.cached ? ", checked " : ", generated "}
+                  <time dateTime={data.generatedAt} title={new Date(data.generatedAt).toString()}>{relativeTime(data.generatedAt)}</time>
+                  {data.usage && data.usage.priceMaxAgeSeconds > 0 ? `; oldest price read ${data.usage.priceMaxAgeSeconds < 60 ? `${data.usage.priceMaxAgeSeconds} s` : `${Math.round(data.usage.priceMaxAgeSeconds / 60)} min`} ago` : ""}.
+                </span>
+              </p>
+              <p role="status" aria-live="polite" className="text-xs text-muted empty:hidden">{recheckMsg}</p>
+              {costOpen && data.usage && (
+                <div id="research-cost"><ResearchCostPanel usage={data.usage} cached={data.cached} /></div>
+              )}
+              {receiptOpen && selected && (
+                <div id="deal-receipt"><DealReceipt group={selected} data={data} /></div>
+              )}
+            </div>
           )}
 
           {groups.length === 0 ? (

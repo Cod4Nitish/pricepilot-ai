@@ -283,3 +283,31 @@ describe("agent output_schema", () => {
     expect(clean.required).toEqual(["price"]);
   });
 });
+
+describe("retailers whose fetched page has no price", () => {
+  it("a heuristic rupee number on a Vijay/Croma page is never a verified price (only structured data is trusted)", async () => {
+    const VIJAY = "https://www.vijaysales.com/p/257086/hp-victus-gaming-laptop-rtx-4050";
+    const d = fake({ "vijaysales.com": VIJAY, "croma.com": CROMA }, {
+      [VIJAY]: { text: `# ${TITLE}\n\nWorth₹3,199Free\n\n## Standard installation charges ₹1,345+GST` },
+      [CROMA]: { text: `# ${TITLE}\nPrice ₹54,990` },
+    }, async () => ({ runId: "r", status: "FAILED", steps: 2, result: null }));
+    const r = await run(d);
+    expect(r.offers.filter((o) => o.price !== null)).toHaveLength(0);
+    expect(r.bestVerified).toBeNull();
+  });
+});
+
+describe("early stop respects the budget", () => {
+  it("prices above the requested budget do not count toward the verified-retailer target", async () => {
+    const d = fake(
+      { "amazon.in": AMZ, "flipkart.com": FK, "croma.com": CROMA },
+      { [AMZ]: { text: priced("₹55,999") }, [FK]: { text: priced("₹53,199") }, [CROMA]: { text: noPrice } },
+      async () => ({ runId: "r", status: "COMPLETED", steps: 5, result: { title: TITLE, price: 49_990 } }),
+    );
+    const r = await run(d, "Samsung Galaxy S24 256GB under 50000");
+    expect(d.calls.agent).toEqual([CROMA]);
+    expect(r.usage?.earlyStopped).toBe(false);
+    expect(r.bestVerified?.retailer).toBe("croma");
+  });
+});
+

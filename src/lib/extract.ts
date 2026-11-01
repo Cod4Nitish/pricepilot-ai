@@ -31,7 +31,7 @@ export function parseInr(s: string): number | null {
 
 const PRICE_RE = /(?:₹|Rs\.?|INR)\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)/gi;
 const MRP_MARK = /m\.?\s?r\.?\s?p|list price|original price|was\b/i;
-const NOISE_NEAR = /\bemi\b|per month|\/\s?month|\/\s?mo\b|\bmonth(?:ly)?\b|\boff\b|save[ds]?\b|cashback|bank offer|exchange|ex-?price|upto|up to|coupon|discount of|delivery|shipping|extra\b|reward|protect|warranty|insurance|\bgst\b/i;
+const NOISE_NEAR = /\bemi\b|per month|\/\s?month|\/\s?mo\b|\bmonth(?:ly)?\b|\boff\b|save[ds]?\b|cashback|bank offer|exchange|ex-?price|upto|up to|coupon|discount of|delivery|shipping|extra\b|reward|protect|warranty|insurance|\bgst\b|\bworth\b|more than|less than|\bfree\b|\bgift\b|\bfreebie|installation|exchange value|bonus/i;
 
 interface Cand {
   value: number;
@@ -67,7 +67,7 @@ const isStruck = (c: Cand) => /~~\s*$/.test(c.before) || /^~~/.test(c.after);
 const isMrp = (c: Cand) => MRP_MARK.test(c.before.slice(-25)) || isStruck(c);
 const isNoise = (c: Cand) =>
   NOISE_NEAR.test(c.before.slice(-30)) ||
-  /^\s*(?:off|cashback|\/\s?mo|per month|emi|discount|instant)/i.test(c.after) ||
+  /^\s*(?:off|cashback|\/\s?mo|per month|emi|discount|instant|free\b)/i.test(c.after) ||
   // ranges such as "Phones Between Rs 50,001-70,000" (insurance/protection plans) are never a selling price
   /^\s*[-–]\s*(?:₹|rs\.?)?\s*\d/i.test(c.after) ||
   /\b(?:between|from|for phones|above|below|under)\s*$/i.test(c.before);

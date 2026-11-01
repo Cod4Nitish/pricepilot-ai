@@ -2,6 +2,7 @@
 // ShopView loads it via dynamic import behind `process.env.NODE_ENV !== "production"` and `?mock=1`.
 // All names/prices here are invented for layout testing and are clearly labelled "MOCK".
 import type { DeliveryInfo, ProductGroup, ShopOffer, ShopResponse } from "@/lib/shop/types";
+import { computeTrueCost, trueCostVerdict } from "@/lib/engine/ecommerce/truecost";
 
 const NOW = Date.now();
 const iso = (minAgo: number) => new Date(NOW - minAgo * 60_000).toISOString();
@@ -23,12 +24,20 @@ function offer(over: Partial<ShopOffer> & { retailer: string; sourceUrl: string;
     ...over,
   };
 }
+/** attach the real (pure) TrueCost computation so the UI shows exactly what the engine would produce */
+const withTc = (o: ShopOffer): ShopOffer => ({ ...o, trueCost: computeTrueCost(o) });
+const verdictFor = (offers: ShopOffer[]) =>
+  trueCostVerdict(offers.map((o) => ({ offerId: o.sourceUrl, retailer: o.retailer, verificationStatus: o.verificationStatus, matchingConfidence: o.matchingConfidence, trueCost: o.trueCost! })));
 
-const offers1: ShopOffer[] = [
+const offers1: ShopOffer[] = ([
   offer({
     retailer: "Amazon", sourceUrl: "https://example.com/mock/amazon/1", listedPrice: 44999, mrp: 54999, discountPct: 18, shippingFee: 0, effectiveTotal: 44999,
     seller: "MOCK Retail Pvt Ltd", warranty: "1 year manufacturer warranty", returnPolicy: "10 days replacement",
     conditionalOffers: [{ text: "Rs 3,000 off with HDFC credit card", amount: 3000, condition: "HDFC credit card", applied: false }],
+    conditionalDiscounts: [
+      { text: "Rs 3,000 instant discount on HDFC Bank credit card", amount: 3000, condition: "HDFC Bank credit card", applied: false, kind: "bank" },
+      { text: "No cost EMI from Rs 7,500/month", amount: null, condition: "Select cards", applied: false, kind: "emi" },
+    ],
     productName: "MOCK Phone One 5G (8GB RAM, 256GB, Black)", observedAt: iso(4),
   }),
   offer({
@@ -41,7 +50,8 @@ const offers1: ShopOffer[] = [
     stockStatus: "unknown", observedAt: iso(2000),
     delivery: { pincode: "400001", serviceable: false, kind: "unserviceable", etaText: null, etaDate: null, etaDays: null, guaranteed: false, checkedAt: iso(2), evidence: null, note: "Retailer says this pincode is not serviceable." },
   }),
-];
+] as ShopOffer[]).map(withTc);
+const offers2: ShopOffer[] = [offer({ retailer: "Reliance Digital", sourceUrl: "https://example.com/mock/rd/2", listedPrice: 39999, productName: "MOCK Phone Two 5G" })].map(withTc);
 
 const g1: ProductGroup = {
   id: "mock-g1", name: "MOCK Phone One 5G 256GB", brand: "Mockbrand", model: "Phone One", variant, imageUrl: null,
@@ -64,6 +74,7 @@ const g1: ProductGroup = {
   },
   why: ["Fits the Rs 50,000 budget with a verified price", "Large battery and 120Hz AMOLED display listed on the product page"],
   offers: offers1,
+  trueCostVerdict: verdictFor(offers1),
   decision: {
     cheapestListed: { offerId: offers1[0].sourceUrl, retailer: "Amazon", value: 44999, reasons: ["Lowest listed price among 3 verified offers"], conditions: [], evidence: ["https://example.com/mock/amazon/1"] },
     cheapestPayable: { offerId: offers1[0].sourceUrl, retailer: "Amazon", value: 44999, reasons: ["Shipping is free and no other fees were found"], conditions: ["Bank offer not applied"], evidence: ["Free delivery"] },
@@ -80,7 +91,8 @@ const g2: ProductGroup = {
   specs: [{ key: "ram_gb", label: "RAM", value: 12, unit: "GB", sourceUrl: "https://example.com/mock/spec/3", evidence: "12GB" }],
   score: { total: null, components: [{ name: "performance", score: null, weight: 0.5, basis: "No evidence" }], provisional: true, missing: ["chipset", "battery"] },
   why: [],
-  offers: [offer({ retailer: "Reliance Digital", sourceUrl: "https://example.com/mock/rd/2", listedPrice: 39999, productName: "MOCK Phone Two 5G" })],
+  offers: offers2,
+  trueCostVerdict: verdictFor(offers2),
   decision: { cheapestListed: null, cheapestPayable: null, fastest: null, bestOverall: null, notes: ["Only one verified store offer was found."], singleStoreOnly: true },
   lowestVerified: null, comparable: false, provisional: true, rank: 2,
 };
@@ -103,4 +115,17 @@ export const MOCK_SHOP_RESPONSE: ShopResponse = {
   emptyReason: null,
   weights: { price: 0.5, delivery: 0.25, evidence: 0.25 },
   runId: "mock-run", generatedAt: iso(1), cached: false,
+  // MOCK telemetry (dev only): shape matches UsageSummary; values are invented for layout testing.
+  usage: {
+    productSearches: 1, cacheHits: 0, sharedInFlight: 0, freshCheck: false, routing: "mock",
+    tinyfishSearchRequests: 3, discoveryCacheHits: 1, tinyfishFetchUrls: 6, paidAgentRuns: 1, paidAgentSteps: 18, agentRunsWithoutStepCount: 0,
+    agentSkipped: { target_met: 2, blocked_or_login: 1 }, earlyStopped: true,
+    verifiedRetailers: ["amazon", "flipkart"], retailersSearched: ["amazon", "flipkart", "croma", "reliance", "vijay"],
+    latencyMs: 21400, timeToFirstVerifiedPriceMs: 6900, priceMaxAgeSeconds: 240,
+    cost: {
+      computedUsd: 0.288, usdPerAgentStep: 0.016,
+      basis: "Calculated: provider-metered agent steps × $0.016/step (TinyFish Agent rate). TinyFish Search and Fetch are $0.",
+      billed: "Actual billed cost is shown in the TinyFish dashboard/wallet; this app does not read the bill.",
+    },
+  },
 };
