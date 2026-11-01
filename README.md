@@ -17,7 +17,7 @@ AI-powered shopping intelligence and real-time price comparison for Indian shopp
 ![Powered by TinyFish](https://img.shields.io/badge/Powered%20by-TinyFish-4af0c4)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-**[Live demo: TBD](#)** &nbsp;|&nbsp; **[API docs](docs/API.md)** &nbsp;|&nbsp; **[Architecture](docs/ARCHITECTURE.md)** &nbsp;|&nbsp; **[Deploy](docs/DEPLOYMENT.md)**
+**[Live demo](https://pricepilot-ai-sigma.vercel.app)** &nbsp;|&nbsp; **[API docs](docs/API.md)** &nbsp;|&nbsp; **[Architecture](docs/ARCHITECTURE.md)** &nbsp;|&nbsp; **[Deploy](docs/DEPLOYMENT.md)**
 
 </div>
 
