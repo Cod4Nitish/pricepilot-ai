@@ -80,7 +80,7 @@ export interface SpecKeyDef {
 }
 
 export interface CategoryConfig {
-  category: "smartphone" | "laptop";
+  category: "smartphone" | "laptop" | "headphones" | "tv";
   specKeys: SpecKeyDef[];
   defaultWeights: Record<string, number>;
   /** multiplicative boosts applied to default weights per preferred feature (configurable). */

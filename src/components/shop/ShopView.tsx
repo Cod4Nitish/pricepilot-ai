@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, MapPin, ReceiptText, RefreshCw, Search, SearchX, Settings, Wallet, WifiOff } from "lucide-react";
+import { Loader2, MapPin, ReceiptText, RefreshCw, Search, SearchX, Settings, Wallet, WifiOff } from "lucide-react";
 import type { DeliveryInfo, ShopResponse, ShopWeights } from "@/lib/shop/types";
 import {
-  badSources, fetchDelivery, fetchShop, fetchShopStream, mergeDelivery, ShopStreamUnavailable, offerKey, relativeTime, ShopApiError, sortGroups, sourceName, type ShopSort,
+  badSources, fetchDelivery, isVerifiedOffer, fetchShop, fetchShopStream, mergeDelivery, ShopStreamUnavailable, offerKey, relativeTime, ShopApiError, sortGroups, sourceName, type ShopSort,
 } from "@/lib/shop-client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -364,14 +364,26 @@ export default function ShopView() {
 
       {data && (
         <div aria-live="polite" className="space-y-4">
-          {data.summary && <p className="text-sm text-muted">{data.summary}</p>}
-
-          {bad.length > 0 && (
-            <div role="status" className="rounded-xl border border-fg/30 bg-peach px-3 py-2 text-sm text-fg">
-              <p className="flex items-center gap-1.5 font-semibold"><AlertTriangle className="h-4 w-4" aria-hidden /> Partial results</p>
-              <ul className="mt-1 list-disc pl-5">
-                {bad.map((s, i) => <li key={i}>{sourceName(s.source)}: {s.message} <span className="text-xs">({s.state.replace("_", " ")})</span></li>)}
-              </ul>
+          {(data.statuses.length > 0 || data.summary) && (
+            <div className="text-sm text-muted">
+              <p>
+                {(() => {
+                  const stores = data.statuses.filter((s) => !s.source.startsWith("delivery:") && s.source !== "discovery");
+                  const verifiedRetailers = new Set(groups.flatMap((g) => g.offers.filter((o) => isVerifiedOffer(o) && o.listedPrice !== null).map((o) => o.retailer.toLowerCase()))).size;
+                  return `Checked ${stores.length} ${stores.length === 1 ? "store" : "stores"} · ${verifiedRetailers} with verified prices${bad.length ? ` · ${bad.length} partial or unavailable` : ""}`;
+                })()}
+              </p>
+              <details className="mt-1 rounded-xl border border-line bg-surface">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 text-xs font-semibold text-primary">Technical source diagnostics</summary>
+                <div className="space-y-2 border-t border-line px-3 py-2 text-xs">
+                  {data.summary && <p className="break-words">{data.summary}</p>}
+                  {data.statuses.length > 0 && (
+                    <ul className="list-disc space-y-0.5 pl-4">
+                      {data.statuses.map((s, i) => <li key={i} className="break-words">{sourceName(s.source)}: {s.state.replace("_", " ")}{s.message ? ` (${s.message})` : ""}</li>)}
+                    </ul>
+                  )}
+                </div>
+              </details>
             </div>
           )}
 
@@ -438,20 +450,43 @@ export default function ShopView() {
                   <h2 id="groups-h" className="font-display text-xl font-extrabold tracking-tight">
                     {data.parsed.searchIntent === "PRODUCT_RECOMMENDATION" || data.parsed.searchIntent === "FEATURE_SEARCH" ? "Recommended products" : "Matching products"}
                   </h2>
-                  {groups.map((g) => (
-                    <div key={g.id} className="space-y-3">
-                      <ProductRecommendationCard
-                        group={g}
-                        selected={selected?.id === g.id}
-                        expanded={selected?.id === g.id && showDetail}
-                        onCompare={() => openCompare(g.id)}
-                        extraActions={<SaveProductButton group={g} data={data} mock={mockEnabled} />}
-                      />
-                      {!isDesktop && expanded && selected?.id === g.id && (
-                        <div ref={detailRef} tabIndex={-1} className="rounded-[1.1rem] border border-line bg-surface2 p-3 outline-none focus-visible:!outline-none">{detail}</div>
-                      )}
-                    </div>
-                  ))}
+                  {(() => {
+                    const priced = groups.filter((g) => g.lowestVerified !== null);
+                    const unpriced = groups.filter((g) => g.lowestVerified === null);
+                    const card = (g: (typeof groups)[number]) => (
+                      <div key={g.id} className="space-y-3">
+                        <ProductRecommendationCard
+                          group={g}
+                          selected={selected?.id === g.id}
+                          expanded={selected?.id === g.id && showDetail}
+                          onCompare={() => openCompare(g.id)}
+                          extraActions={<SaveProductButton group={g} data={data} mock={mockEnabled} />}
+                        />
+                        {!isDesktop && expanded && selected?.id === g.id && (
+                          <div ref={detailRef} tabIndex={-1} className="rounded-[1.1rem] border border-line bg-surface2 p-3 outline-none focus-visible:!outline-none">{detail}</div>
+                        )}
+                      </div>
+                    );
+                    return (
+                      <>
+                        {priced.length > 0 && (
+                          <div className="space-y-3">
+                            <h3 className="eyebrow">Verified prices ({priced.length})</h3>
+                            {priced.map(card)}
+                          </div>
+                        )}
+                        {priced.length === 0 && <p className="text-sm text-muted">No product in these results has a verified price yet.</p>}
+                        {unpriced.length > 0 && (
+                          <details className="rounded-[1.1rem] border border-line bg-surface2" open={priced.length === 0 || unpriced.some((g) => g.id === selected?.id && expanded) ? true : undefined}>
+                            <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 text-sm font-semibold">
+                              Unpriced candidates (specs found, price not verified) ({unpriced.length})
+                            </summary>
+                            <div className="space-y-3 border-t border-line p-3">{unpriced.map(card)}</div>
+                          </details>
+                        )}
+                      </>
+                    );
+                  })()}
                 </section>
                 {isDesktop && (
                   <aside aria-label="Selected product offers" ref={detailRef} tabIndex={-1} className="min-w-0 space-y-4 outline-none focus-visible:!outline-none">
@@ -466,7 +501,7 @@ export default function ShopView() {
             Generated <time dateTime={data.generatedAt} title={new Date(data.generatedAt).toString()}>{relativeTime(data.generatedAt)}</time>
             {data.cached ? " (from cache)" : ""}. Prices change; open the store to confirm before buying.
           </p>
-          <RunLog runId={data.runId} />
+          {!(liveForThis && !mockEnabled) && <RunLog runId={data.runId} />}
         </div>
       )}
 

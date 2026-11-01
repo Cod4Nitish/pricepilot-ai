@@ -76,12 +76,13 @@ export default function ProductRecommendationCard({
       )}
 
       {score && (
-        <section aria-label="Score summary" className="rounded-xl bg-surface2 p-3">
+        <section aria-label="Product Fit Score" className="rounded-xl bg-surface2 p-3">
           <p className="eyebrow">At a glance</p>
           <p className="mt-1 text-sm font-semibold">
-            Score:{" "}
+            Product Fit Score:{" "}
             {score.total !== null ? <span className="tabular">{Math.round(score.total)}/100</span> : <span className="text-muted">Not enough evidence to score</span>}
           </p>
+          <p className="text-xs text-muted">How well this product&apos;s sourced specs match your request. Not a store or price rating.</p>
           <ul className="mt-2 space-y-1.5">
             {comps.map((c) => {
               const pct = componentPct(c.score);

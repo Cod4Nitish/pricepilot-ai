@@ -1,6 +1,6 @@
 // Discovery for PRODUCT_RECOMMENDATION / FEATURE_SEARCH:
 // search -> fetch -> evidence-verified candidates -> hard constraints -> score/rank -> verified offers -> groups.
-import { getCategoryConfig, scoreCoverage, type CategoryConfig } from "../categories";
+import { getCategoryConfig, scoreCoverage, unsupportedCategoryMessage, type CategoryConfig } from "../categories";
 import type { ParsedQuery, ProductGroup, ShopWeights, SourceStatus, SpecFact } from "../types";
 import { resolveBuildDecision, resolveBuildOffers, resolveLlm } from "./deps";
 import { extractDeterministic, extractForTarget, extractWithLlm, type ExtractResult } from "./extract";
@@ -48,7 +48,7 @@ export async function runDiscovery(parsed: ParsedQuery, ctx: { weights: ShopWeig
   if (!cfg) {
     return {
       groups: [], statuses: [{ source: "discovery", state: "skipped", message: `Recommendations are not supported for category "${parsed.category}" yet.` }], notes,
-      emptyReason: `Recommendations currently cover smartphones and laptops. Try naming a specific ${parsed.category === "other" ? "product" : parsed.category + " model"}.`, candidateCount: 0,
+      emptyReason: unsupportedCategoryMessage(parsed.category), candidateCount: 0,
     };
   }
 

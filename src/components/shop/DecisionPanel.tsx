@@ -1,14 +1,26 @@
 "use client";
 import { useId, useState } from "react";
 import type { Pick, ProductGroup, ShopWeights } from "@/lib/shop/types";
-import { normalizeWeights, rupees } from "@/lib/shop-client";
+import { isVerifiedOffer, normalizeWeights, rupees } from "@/lib/shop-client";
 import { Button } from "@/components/ui/button";
 
 export const SINGLE_STORE_NOTE = "Multi-store comparison is not possible yet: only one verified store offer was found.";
+export const LIMITED_COVERAGE_NOTE = "Comparison coverage limited: verified price from 1 retailer";
+export const OFFER_SCORE_LABEL = "Offer Evaluation Score";
+export const OFFER_SCORE_HINT = "Rates one store offer on price, delivery and evidence. Not the same as the Product Fit Score.";
+
+/** Distinct retailers that have a price-verified offer in this group. */
+export function verifiedRetailerCount(group: ProductGroup): number {
+  return new Set(group.offers.filter((o) => isVerifiedOffer(o) && o.listedPrice !== null).map((o) => o.retailer.toLowerCase())).size;
+}
+
+export function coverageLimited(group: ProductGroup): boolean {
+  return group.decision.singleStoreOnly || verifiedRetailerCount(group) < 2;
+}
 
 function pickValue(p: Pick, kind: string): string {
   if (p.value === null) return "";
-  if (typeof p.value === "number") return kind === "best" ? `Score ${Math.round(p.value)}` : rupees(p.value);
+  if (typeof p.value === "number") return kind === "best" ? `${OFFER_SCORE_LABEL}: ${Math.round(p.value)}` : rupees(p.value);
   return p.value;
 }
 
@@ -20,6 +32,7 @@ function Tile({ title, pick, kind, reason }: { title: string; pick: Pick | null;
         <>
           <p className="mt-1 font-display text-lg font-bold">{pick.retailer}</p>
           {pick.value !== null && <p className="tabular text-sm font-semibold">{pickValue(pick, kind)}</p>}
+          {kind === "best" && typeof pick.value === "number" && <p className="text-xs text-muted">{OFFER_SCORE_HINT}</p>}
           <details className="mt-1 text-xs">
             <summary className="flex min-h-11 cursor-pointer list-none items-center font-semibold text-primary">Reasons, conditions, evidence</summary>
             <div className="space-y-2 text-muted">
@@ -79,19 +92,20 @@ export default function DecisionPanel({
   const [w, setW] = useState({ price: Math.round(weights.price * 100), delivery: Math.round(weights.delivery * 100), evidence: Math.round(weights.evidence * 100) });
   const n = normalizeWeights(w);
   const pct = (x: number) => Math.round(x * 100);
+  const limited = coverageLimited(group);
   const reasonFor = (k: string) => d.notes.find((x) => x.toLowerCase().includes(k)) ?? d.notes[0] ?? null;
 
   return (
     <section aria-labelledby={`dp-${group.id}`} className="space-y-3">
       <h3 id={`dp-${group.id}`} className="font-display text-lg font-bold tracking-tight">Decision</h3>
-      {d.singleStoreOnly && (
-        <p role="note" className="rounded-xl border border-fg/30 bg-sun px-3 py-2 text-sm font-medium text-fg">{SINGLE_STORE_NOTE}</p>
+      {limited && (
+        <p role="note" className="rounded-xl border border-line bg-surface2 px-3 py-2 text-sm text-muted">{LIMITED_COVERAGE_NOTE}</p>
       )}
       <ul className="grid gap-2 sm:grid-cols-2">
         <Tile title="Cheapest listed" pick={d.cheapestListed} kind="price" reason={reasonFor("listed") ?? reasonFor("cheap")} />
         <Tile title="Cheapest payable" pick={d.cheapestPayable} kind="price" reason={reasonFor("payable") ?? reasonFor("fee")} />
         <Tile title="Fastest" pick={d.fastest} kind="eta" reason={reasonFor("deliver") ?? reasonFor("fast")} />
-        <Tile title="Best overall" pick={d.bestOverall} kind="best" reason={reasonFor("best") ?? reasonFor("overall")} />
+        {!limited && d.bestOverall && <Tile title="Best overall" pick={d.bestOverall} kind="best" reason={reasonFor("best") ?? reasonFor("overall")} />}
       </ul>
 
       {d.notes.length > 0 && (
@@ -101,7 +115,7 @@ export default function DecisionPanel({
         </div>
       )}
 
-      <details className="rounded-xl border border-line bg-surface2">
+      {!limited && <details className="rounded-xl border border-line bg-surface2">
         <summary className="eyebrow flex min-h-11 cursor-pointer list-none items-center px-3">Best-overall weights</summary>
         <form
           className="space-y-1 border-t border-line px-3 py-2"
@@ -116,7 +130,7 @@ export default function DecisionPanel({
           <p className="text-xs text-muted">Weights are normalised to 100%. The server recomputes the ranking.</p>
           <Button type="submit" size="sm" disabled={pending}>{pending ? "Applying..." : "Apply weights"}</Button>
         </form>
-      </details>
+      </details>}
     </section>
   );
 }

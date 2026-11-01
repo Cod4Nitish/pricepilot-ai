@@ -1,9 +1,9 @@
 "use client";
 import { Loader2, Truck } from "lucide-react";
 import type { ProductGroup, ShopResponse, ShopWeights } from "@/lib/shop/types";
-import { offerKey, sortOffers, type ShopSort } from "@/lib/shop-client";
+import { isVerifiedOffer, offerKey, sortOffers, type ShopSort } from "@/lib/shop-client";
 import { Button } from "@/components/ui/button";
-import DecisionPanel from "./DecisionPanel";
+import DecisionPanel, { coverageLimited } from "./DecisionPanel";
 import RetailerOfferCard from "./RetailerOfferCard";
 import { TrueCostVerdictPanel } from "./TrueCostBreakdown";
 
@@ -33,7 +33,10 @@ export default function GroupDetail({
   onCheckDelivery: (offerKeys?: string[]) => void;
   onNeedPin: () => void;
 }) {
-  const offers = sortOffers(group.offers, sort);
+  const all = sortOffers(group.offers, sort);
+  const offers = all.filter((o) => isVerifiedOffer(o) && o.listedPrice !== null);
+  const leads = all.filter((o) => !(isVerifiedOffer(o) && o.listedPrice !== null));
+  const limited = coverageLimited(group);
   const tagsFor = (key: string, retailer: string) => {
     const d = group.decision;
     const t: string[] = [];
@@ -41,7 +44,7 @@ export default function GroupDetail({
     if (is(d.cheapestListed)) t.push("Cheapest listed");
     if (is(d.cheapestPayable)) t.push("Cheapest payable");
     if (is(d.fastest)) t.push("Fastest");
-    if (is(d.bestOverall)) t.push("Best overall");
+    if (!limited && is(d.bestOverall)) t.push("Best overall");
     return t;
   };
   const anyLoading = delivery.loading.size > 0;
@@ -54,7 +57,7 @@ export default function GroupDetail({
 
       <section aria-labelledby={`off-${group.id}`} className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 id={`off-${group.id}`} className="font-display text-lg font-bold tracking-tight">Store offers ({offers.length})</h3>
+          <h3 id={`off-${group.id}`} className="font-display text-lg font-bold tracking-tight">{limited ? "Verified store offers" : "Verified price comparison"} ({offers.length})</h3>
           <Button variant="secondary" size="sm" onClick={() => (pin ? onCheckDelivery() : onNeedPin())} disabled={anyLoading || offers.length === 0}>
             {anyLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Truck className="h-4 w-4" aria-hidden />}
             Check delivery{offers.length > 6 ? " (top 6)" : ""}
@@ -63,7 +66,7 @@ export default function GroupDetail({
         {delivery.error && <p role="alert" className="rounded-xl border border-bad/40 bg-peach px-3 py-2 text-sm text-fg">{delivery.error}</p>}
         {sort === "delivery" && <p className="text-xs text-muted">Sorted by published delivery estimate. Offers with unknown delivery are listed last.</p>}
         {offers.length === 0 ? (
-          <p className="text-sm text-muted">No verified offers for this product yet.</p>
+          <p className="text-sm text-muted">No price-verified offers for this product yet.</p>
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">
             {offers.map((o) => (
@@ -79,6 +82,26 @@ export default function GroupDetail({
           </div>
         )}
       </section>
+
+      {leads.length > 0 && (
+        <details className="rounded-xl border border-line bg-surface2">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 text-sm font-semibold">
+            Unverified leads ({leads.length}) <span className="ml-1 font-normal text-muted">price not verified, not part of the comparison</span>
+          </summary>
+          <div className="grid gap-3 border-t border-line p-3 xl:grid-cols-2">
+            {leads.map((o) => (
+              <RetailerOfferCard
+                key={offerKey(o)}
+                offer={o}
+                pin={pin}
+                tags={[]}
+                deliveryLoading={delivery.loading.has(offerKey(o))}
+                onCheckDelivery={() => (pin ? onCheckDelivery([offerKey(o)]) : onNeedPin())}
+              />
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

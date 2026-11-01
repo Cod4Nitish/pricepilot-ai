@@ -28,7 +28,7 @@ const CATEGORY_WORDS: Record<string, Category> = {
   laptop: "laptop", laptops: "laptop", notebook: "laptop", macbook: "laptop", thinkpad: "laptop", ideapad: "laptop", vivobook: "laptop",
   zenbook: "laptop", inspiron: "laptop", pavilion: "laptop", victus: "laptop", loq: "laptop", legion: "laptop",
   headphone: "headphones", headphones: "headphones", earbuds: "headphones", earphones: "headphones", tws: "headphones", airpods: "headphones",
-  neckband: "headphones", airdopes: "headphones", tv: "tv", television: "tv", tablet: "tablet", tablets: "tablet", ipad: "tablet",
+  neckband: "headphones", airdopes: "headphones", earbud: "headphones", earphone: "headphones", headset: "headphones", headsets: "headphones", tv: "tv", tvs: "tv", television: "tv", televisions: "tv", purifier: "appliance", tablet: "tablet", tablets: "tablet", ipad: "tablet",
   smartwatch: "smartwatch", smartwatches: "smartwatch", watch: "smartwatch", dslr: "camera", mirrorless: "camera", gopro: "camera",
   fridge: "appliance", refrigerator: "appliance", ac: "appliance", microwave: "appliance", geyser: "appliance", "washing machine": "appliance",
 };

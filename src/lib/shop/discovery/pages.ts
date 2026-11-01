@@ -10,7 +10,7 @@ export const JUNK_DOMAINS = [
 ];
 const PREFERRED = ["gsmarena.com", "91mobiles.com", "smartprix.com", "gadgets360.com", "ndtv.com", "digit.in", "techradar.com", "notebookcheck.net", "rtings.com", "pcmag.com", "tomsguide.com", "androidauthority.com", "indianexpress.com", "hindustantimes.com", "timesofindia.indiatimes.com", "tech.hindustantimes.com", "beebom.com", "mysmartprice.com", "flipkart.com", "amazon.in", "croma.com"];
 
-const CAT_WORD: Partial<Record<Category, string>> = { smartphone: "smartphones", laptop: "laptops" };
+const CAT_WORD: Partial<Record<Category, string>> = { smartphone: "smartphones", laptop: "laptops", headphones: "earbuds headphones", tv: "smart TVs" };
 
 export function isJunk(url: string): boolean {
   const h = hostOf(url);

@@ -270,9 +270,9 @@ describe("runShop: recommendation", () => {
 
   it("unsupported category does not guess", async () => {
     const { deps } = mkDeps();
-    const r = await runShop({ query: "best tv under 40000" }, deps);
+    const r = await runShop({ query: "best air purifier under 15000" }, deps);
     expect(r.groups).toEqual([]);
-    expect(r.emptyReason).toMatch(/smartphones and laptops/);
+    expect(r.emptyReason).toMatch(/not supported yet/);
   });
 });
 
