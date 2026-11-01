@@ -1,0 +1,93 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f7;
+  --border: #dfe3ef;
+  --fg: #0b1020;
+  --muted: #5b6480;
+  --primary: #3b6cff;
+  --accent: #8b5cf6;
+  --good: #047857;
+  --warn: #b45309;
+  --bad: #dc2626;
+}
+.dark {
+  --bg: #070b14;
+  --surface: #0d1424;
+  --surface-2: #131c33;
+  --border: #1f2a47;
+  --fg: #eef2ff;
+  --muted: #8d98b8;
+  --primary: #4f83ff;
+  --accent: #a073ff;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+}
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface-2);
+  --color-line: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-var), var(--font-inter), ui-sans-serif, sans-serif;
+}
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 30rem at 15% -10%, color-mix(in srgb, var(--primary) 18%, transparent), transparent),
+    radial-gradient(50rem 28rem at 95% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent);
+}
+.gradient-text {
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.gradient-bg {
+  background-image: linear-gradient(135deg, var(--primary), var(--accent));
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.skeleton-shimmer {
+  animation: skpulse 1.6s ease-in-out infinite;
+}
+@keyframes skpulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
