@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, MapPin, ReceiptText, RefreshCw, Search, SearchX, Settings, Wallet, WifiOff } from "lucide-react";
 import type { DeliveryInfo, ShopResponse, ShopWeights } from "@/lib/shop/types";
 import {
-  badSources, fetchDelivery, fetchShop, mergeDelivery, offerKey, relativeTime, ShopApiError, sortGroups, sourceName, type ShopSort,
+  badSources, fetchDelivery, fetchShop, fetchShopStream, mergeDelivery, ShopStreamUnavailable, offerKey, relativeTime, ShopApiError, sortGroups, sourceName, type ShopSort,
 } from "@/lib/shop-client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,11 @@ import ParsedChips from "./ParsedChips";
 import ProductRecommendationCard from "./ProductRecommendationCard";
 import GroupDetail, { ComparisonTable, type DeliveryUi } from "./GroupDetail";
 import { ShopLoading } from "./ShopSkeletons";
+import ResearchMonitor, { ResearchLog } from "./ResearchMonitor";
+import type { MonitorStep } from "@/lib/research-monitor";
 import ResearchCostPanel from "./ResearchCostPanel";
 import DealReceipt from "./DealReceipt";
+import { SaveProductButton, SaveReportButton } from "@/components/saved/SaveButtons";
 
 const SORTS: { id: ShopSort; label: string }[] = [
   { id: "relevance", label: "Best match" },
@@ -120,6 +123,8 @@ export default function ShopView() {
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [rechecking, setRechecking] = useState(false);
   const [recheckMsg, setRecheckMsg] = useState<string | null>(null);
+  // Real steps streamed from POST /api/shop for the current search (never simulated).
+  const [live, setLive] = useState<{ key: string; runId: string | null; steps: MonitorStep[]; startedAt: number } | null>(null);
   const query = useQuery<ShopResponse, Error>({
     queryKey,
     enabled: !!q && pin !== undefined,
@@ -132,10 +137,29 @@ export default function ShopView() {
         const m = await import("@/app/shop/__mocks__/shop-mock");
         return m.MOCK_SHOP_RESPONSE;
       }
-      return fetchShop({ query: q, pincode: pin, weights: weights ?? undefined }, signal);
+      const args = { query: q, pincode: pin, weights: weights ?? undefined };
+      const key = JSON.stringify(queryKey);
+      setLive({ key, runId: null, steps: [], startedAt: Date.now() });
+      let gotEvent = false;
+      try {
+        return await fetchShopStream(
+          args,
+          (ev) => {
+            gotEvent = true;
+            if (ev.type === "start") setLive((l) => (l && l.key === key ? { ...l, runId: ev.runId } : l));
+            else if (ev.type === "step") setLive((l) => (l && l.key === key ? { ...l, steps: [...l.steps, { at: ev.at, label: ev.label, status: ev.status }] } : l));
+          },
+          signal,
+        );
+      } catch (e) {
+        // Streaming unavailable before any event: fall back to the plain JSON request (same single search).
+        if (e instanceof ShopStreamUnavailable && !gotEvent) return fetchShop(args, signal);
+        throw e;
+      }
     },
   });
   const data = query.data;
+  const liveForThis = live && live.key === JSON.stringify(queryKey) ? live : null;
 
   // New response => cached delivery results from a previous run no longer apply.
   useEffect(() => {
@@ -310,7 +334,14 @@ export default function ShopView() {
         </EmptyState>
       )}
 
-      {q && (query.isPending || pin === undefined) && !err && <ShopLoading />}
+      {q && (query.isPending || pin === undefined) && !err && (
+        liveForThis && !mockEnabled ? (
+          <ResearchMonitor query={q} runId={liveForThis.runId} steps={liveForThis.steps} startedAt={liveForThis.startedAt} />
+        ) : (
+          <ShopLoading />
+        )
+      )}
+      {data && !query.isFetching && liveForThis && !mockEnabled && <ResearchLog steps={liveForThis.steps} />}
       {q && query.isFetching && data && (
         <p role="status" aria-live="polite" className="text-sm text-muted">Updating results...</p>
       )}
@@ -362,6 +393,7 @@ export default function ShopView() {
                     <Wallet className="h-4 w-4" aria-hidden /> {costOpen ? "Hide research cost" : "Research cost"}
                   </Button>
                 )}
+                <SaveReportButton data={data} mock={mockEnabled} />
                 {selected && (
                   <Button variant="secondary" aria-expanded={receiptOpen} aria-controls="deal-receipt" onClick={() => setReceiptOpen((v) => !v)}>
                     <ReceiptText className="h-4 w-4" aria-hidden /> {receiptOpen ? "Hide receipt" : "Deal receipt"}
@@ -413,6 +445,7 @@ export default function ShopView() {
                         selected={selected?.id === g.id}
                         expanded={selected?.id === g.id && showDetail}
                         onCompare={() => openCompare(g.id)}
+                        extraActions={<SaveProductButton group={g} data={data} mock={mockEnabled} />}
                       />
                       {!isDesktop && expanded && selected?.id === g.id && (
                         <div ref={detailRef} tabIndex={-1} className="rounded-[1.1rem] border border-line bg-surface2 p-3 outline-none focus-visible:!outline-none">{detail}</div>

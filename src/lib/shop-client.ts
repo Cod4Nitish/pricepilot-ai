@@ -197,3 +197,99 @@ export function sourceName(source: string): string {
   const s = source.replace(/^delivery:/, "");
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+// ---------- streaming (NDJSON) ----------
+export type ShopStepStatus = "ok" | "warn" | "error";
+export type ShopStreamEvent =
+  | { type: "start"; runId: string; at: string }
+  | { type: "step"; at: string; label: string; status: ShopStepStatus }
+  | { type: "result"; data: ShopResponse }
+  | { type: "error"; status: number; error: { code?: string; message?: string } };
+
+/**
+ * Incremental NDJSON parser. Feed raw text chunks; returns complete parsed events and keeps the
+ * trailing partial line in `rest`. Blank and malformed lines are skipped (never guessed).
+ */
+export function parseNdjsonChunk(rest: string, chunk: string): { events: ShopStreamEvent[]; rest: string } {
+  const lines = (rest + chunk).split("\n");
+  const tail = lines.pop() ?? "";
+  const events: ShopStreamEvent[] = [];
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const v = JSON.parse(t) as { type?: unknown };
+      if (v && typeof v === "object" && typeof v.type === "string") events.push(v as ShopStreamEvent);
+    } catch {
+      /* malformed line: skip */
+    }
+  }
+  return { events, rest: tail };
+}
+
+/** Thrown when streaming failed before any event arrived, so the caller may fall back to fetchShop. */
+export class ShopStreamUnavailable extends Error {}
+
+export async function fetchShopStream(
+  args: { query: string; pincode?: string | null; weights?: Partial<ShopWeights>; sort?: ShopSort; fresh?: boolean },
+  onEvent: (e: ShopStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<ShopResponse> {
+  const body: Record<string, unknown> = { query: args.query, stream: true };
+  if (args.fresh) body.fresh = true;
+  if (args.pincode) body.pincode = args.pincode;
+  if (args.weights) body.weights = args.weights;
+  if (args.sort) body.sort = args.sort;
+  let res: Response;
+  try {
+    res = await fetch("/api/shop", { method: "POST", headers: { "Content-Type": "application/json", ...userKeyHeaders() }, body: JSON.stringify(body), signal });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    throw new ShopStreamUnavailable("network");
+  }
+  if (!res.ok) {
+    // Pre-stream failures (validation, rate limit, not configured) are regular JSON errors.
+    let json: unknown = null;
+    try {
+      json = await res.json();
+    } catch {
+      /* non-JSON */
+    }
+    const e = (json as { error?: { code?: string; message?: string } } | null)?.error;
+    throw new ShopApiError(res.status, e?.code ?? "ERROR", e?.message ?? `Request failed (${res.status})`);
+  }
+  if (!res.body || !(res.headers.get("content-type") ?? "").includes("ndjson")) throw new ShopStreamUnavailable("no stream");
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let rest = "";
+  let gotAny = false;
+  const handle = (events: ShopStreamEvent[]): ShopResponse | null => {
+    for (const ev of events) {
+      gotAny = true;
+      onEvent(ev);
+      if (ev.type === "result") return ev.data;
+      if (ev.type === "error") throw new ShopApiError(ev.status, ev.error?.code ?? "ERROR", ev.error?.message ?? `Request failed (${ev.status})`);
+    }
+    return null;
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      const parsed = parseNdjsonChunk(rest, done ? dec.decode() + "\n" : dec.decode(value, { stream: true }));
+      rest = parsed.rest;
+      const r = handle(parsed.events);
+      if (r) {
+        void reader.cancel().catch(() => {});
+        return r;
+      }
+      if (done) break;
+    }
+  } catch (e) {
+    if (e instanceof ShopApiError) throw e;
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    if (!gotAny) throw new ShopStreamUnavailable("read failed");
+    throw new ShopApiError(0, "NETWORK", "The connection dropped while the search was running. Try again.");
+  }
+  if (!gotAny) throw new ShopStreamUnavailable("empty");
+  throw new ShopApiError(0, "NETWORK", "The search ended without a result. Try again.");
+}

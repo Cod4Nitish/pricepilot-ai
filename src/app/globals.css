@@ -335,3 +335,35 @@ textarea:focus-visible {
   transform: translateY(2px);
   box-shadow: 0 0 0 var(--ink-edge);
 }
+
+/* Research monitor: indeterminate bar (no percentage). Static under reduced motion. */
+@keyframes rm-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.rm-indeterminate { animation: rm-indeterminate 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .rm-indeterminate { animation: none !important; width: 100%; opacity: 0.6; }
+}
+
+/* Print / Save as PDF (saved research reports): hide app chrome and action buttons. */
+@media print {
+  header,
+  nav,
+  .skip-link,
+  .no-print {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .print-break {
+    break-inside: avoid-page;
+  }
+  .lift-3d,
+  .shadow-card {
+    box-shadow: none !important;
+    transform: none !important;
+  }
+}

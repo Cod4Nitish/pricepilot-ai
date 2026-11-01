@@ -6,11 +6,13 @@ import { getCostConfig } from "./config";
 export interface CostContext {
   fresh: boolean;
   usages: SearchUsage[];
+  /** optional live forwarder of real pipeline steps (research monitor stream) */
+  onStep?: (label: string, status: "ok" | "warn" | "error") => void;
 }
 export const costContext = new AsyncLocalStorage<CostContext>();
 
-export async function withCostContext<T>(fresh: boolean, fn: () => Promise<T>): Promise<{ result: T; usage: UsageSummary }> {
-  const store: CostContext = { fresh, usages: [] };
+export async function withCostContext<T>(fresh: boolean, fn: () => Promise<T>, onStep?: CostContext["onStep"]): Promise<{ result: T; usage: UsageSummary }> {
+  const store: CostContext = { fresh, usages: [], onStep };
   const t0 = Date.now();
   const result = await costContext.run(store, fn);
   return { result, usage: summarizeUsage(store.usages, Date.now() - t0, fresh) };

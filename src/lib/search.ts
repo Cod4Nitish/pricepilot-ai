@@ -918,6 +918,19 @@ async function runSearch(query: string, opts: SearchOptions, cfg: CostConfig, fr
   const usage = newUsage("miss", cfg, fresh);
   const deps = meteredDeps(opts.deps ?? defaultDeps, usage);
   const tracker = new RunTracker("search", randomUUID());
+  // forward real retailer/agent steps to a live research monitor when one is listening (no extra work, no invented steps)
+  const forward = costContext.getStore()?.onStep;
+  if (forward) {
+    const step = tracker.step.bind(tracker);
+    tracker.step = (label, status = "ok") => {
+      step(label, status);
+      try {
+        forward(label, status);
+      } catch {
+        /* a slow or closed listener never breaks the search */
+      }
+    };
+  }
   const ctx: PipelineCtx = {
     deps,
     tracker,

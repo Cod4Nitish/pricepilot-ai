@@ -16,11 +16,14 @@ export default function ProductRecommendationCard({
   selected,
   expanded,
   onCompare,
+  extraActions,
 }: {
   group: ProductGroup;
   selected: boolean;
   expanded: boolean;
   onCompare: () => void;
+  /** e.g. the local "Save product" action */
+  extraActions?: React.ReactNode;
 }) {
   const [showAllScore, setShowAllScore] = useState(false);
   const watch = useMutation({
@@ -122,14 +125,15 @@ export default function ProductRecommendationCard({
           Compare prices ({group.offers.length}) <ChevronDown className={cn("h-4 w-4 transition-transform", expanded && "rotate-180")} aria-hidden />
         </Button>
         <Button variant="secondary" onClick={() => watch.mutate()} disabled={watch.isPending || watch.isSuccess}>
-          <Star className="h-4 w-4" aria-hidden /> {watch.isSuccess ? "Saved" : watch.isPending ? "Saving" : "Save"}
+          <Star className="h-4 w-4" aria-hidden /> {watch.isSuccess ? "Watching" : watch.isPending ? "Adding" : "Watchlist"}
         </Button>
+        {extraActions}
       </div>
       <p role="status" className="text-xs empty:hidden">
         {watch.isError && !needsSignIn && <span className="text-bad">{(watch.error as Error).message}</span>}
         {needsSignIn && (
           <span>
-            Sign in to save products.{" "}
+            Sign in to use the account watchlist.{" "}
             <Link href="/settings#account" className="text-primary underline">Go to sign in</Link>
           </span>
         )}

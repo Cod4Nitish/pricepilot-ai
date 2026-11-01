@@ -41,3 +41,28 @@ describe("discovery prefers budget listing pages", () => {
   });
 });
 
+
+describe("Indian budget bands and use cases", () => {
+  const cases: [string, number | null, number | null, string | null][] = [
+    ["Best phone under 10k", null, 10000, null],
+    ["best phone 10k-15k", 10000, 15000, null],
+    ["phone between 20000 and 30000", 20000, 30000, null],
+    ["phones from 40k to 50k", 40000, 50000, null],
+    ["best phone above 70k", 70000, null, null],
+    ["Best gaming phone under ₹30K", null, 30000, "gaming"],
+    ["best battery phone under 20000", null, 20000, "battery"],
+  ];
+  it.each(cases)("%s", (q, min, max, feature) => {
+    const p = parseShopQuery(q);
+    expect(p.searchIntent).toBe("PRODUCT_RECOMMENDATION");
+    expect(p.category).toBe("smartphone");
+    expect(p.budgetMin).toBe(min);
+    expect(p.budgetMax).toBe(max);
+    if (feature) expect(p.preferredFeatures).toContain(feature);
+  });
+  it("student laptop", () => {
+    const p = parseShopQuery("best student laptop under 60000");
+    expect(p.category).toBe("laptop");
+    expect(p.preferredFeatures).toContain("student");
+  });
+});

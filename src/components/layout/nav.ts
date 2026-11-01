@@ -1,4 +1,4 @@
-import { Home, Search, ShoppingBasket, Star, Sparkles, LineChart, Settings, Zap, Swords, Store, MoreHorizontal, type LucideIcon } from "lucide-react";
+import { Home, Search, ShoppingBasket, Star, Sparkles, LineChart, Settings, Zap, Swords, Store, MoreHorizontal, Bookmark, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   href: string;
@@ -9,6 +9,7 @@ export interface NavItem {
 /** Small text nav in the desktop top bar. */
 export const TOP_NAV: NavItem[] = [
   { href: "/basket", label: "Basket", icon: ShoppingBasket },
+  { href: "/saved", label: "Saved", icon: Bookmark },
   { href: "/watchlist", label: "Watchlist", icon: Star },
   { href: "/history", label: "History", icon: LineChart },
   { href: "/assistant", label: "Assistant", icon: Sparkles },
@@ -34,6 +35,7 @@ export const MORE_ICON = MoreHorizontal;
 
 /** Pages shown in the mobile More sheet (everything not in the bottom bar). */
 export const MOBILE_MORE: NavItem[] = [
+  { href: "/saved", label: "Saved", icon: Bookmark },
   { href: "/history", label: "Price History", icon: LineChart },
   { href: "/assistant", label: "Assistant", icon: Sparkles },
   ...MORE_NAV,
