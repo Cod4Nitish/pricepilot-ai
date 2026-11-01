@@ -79,7 +79,8 @@ export default function SmartSearch({
   useEffect(() => () => recRef.current?.abort(), []);
 
   function openResults(text: string, chosen: string) {
-    router.push(`/discover?q=${encodeURIComponent(text)}&mode=${chosen}`);
+    // E-Commerce goes to the /shop engine (recommendations, exact products, comparisons); Quick/Both stay on /discover.
+    router.push(chosen === "ecommerce" ? `/shop?q=${encodeURIComponent(text)}` : `/discover?q=${encodeURIComponent(text)}&mode=${chosen}`);
   }
 
   async function go(raw: string) {
@@ -94,6 +95,7 @@ export default function SmartSearch({
       try {
         const r = await fetchIntent(text);
         overall = r.overall;
+        if (r.overall === "ecommerce") chosen = "ecommerce";
         const reason = r.items[0]?.reason ?? "";
         setRoute(`Searching ${MODE_LABEL[r.overall]}${r.items.length > 1 ? ` (${r.items.length} items)` : ""}${reason ? `: ${reason}` : ""}`);
       } catch {

@@ -20,7 +20,7 @@ export default function HeroSearch() {
         {EXAMPLES.map((ex) => (
           <Link
             key={ex}
-            href={`/discover?q=${encodeURIComponent(ex)}`}
+            href={`/shop?q=${encodeURIComponent(ex)}`}
             className="inline-flex min-h-11 items-center rounded-lg border border-line-strong bg-surface px-3 text-sm hover:border-primary hover:text-primary"
           >
             {ex}

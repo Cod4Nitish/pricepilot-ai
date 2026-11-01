@@ -6,7 +6,7 @@ import { withCostContext } from "@/lib/cost/context";
 import { runShop } from "@/lib/shop/pipeline";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const Body = z.object({
   query: z.string().trim().min(2).max(300),

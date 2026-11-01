@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -215,6 +215,13 @@ export default function DiscoverView() {
   const quickItems = items.filter((i) => i.mode === "quick" || i.mode === "both");
   const overall: Mode | null = items.length === 0 ? null : override !== "auto" ? override : (intent.data?.overall ?? items[0].mode);
 
+  // E-Commerce-only requests belong to the /shop engine (recommendations, exact products, comparisons).
+  // Old /discover deep links keep working: they are forwarded once the intent is known.
+  const ecommerceOnly = !!q && (override === "ecommerce" || (override === "auto" && !!intent.data && items.length > 0 && items.every((i) => i.mode === "ecommerce")));
+  useEffect(() => {
+    if (ecommerceOnly) router.replace(`/shop?q=${encodeURIComponent(q)}`);
+  }, [ecommerceOnly, q, router]);
+
   function setOverride(m: SearchMode) {
     router.replace(`/discover?q=${encodeURIComponent(q)}&mode=${m}`);
   }
@@ -273,7 +280,7 @@ export default function DiscoverView() {
         )}
       </div>
 
-      {intent.isPending && override === "auto" ? <ResultsSkeleton note="Understanding your request..." /> : items.map((it, i) => <ItemBlock key={`${it.query}-${it.mode}-${i}`} item={it} pincode={pincode} />)}
+      {ecommerceOnly ? <ResultsSkeleton note="Opening shopping results..." /> : intent.isPending && override === "auto" ? <ResultsSkeleton note="Understanding your request..." /> : items.map((it, i) => <ItemBlock key={`${it.query}-${it.mode}-${i}`} item={it} pincode={pincode} />)}
     </div>
   );
 }

@@ -100,7 +100,17 @@ export async function runDiscovery(parsed: ParsedQuery, ctx: { weights: ShopWeig
   const weights = cfg.weightsFor(parsed);
   const pre = rankDesc(scoreAll(passing, cfg, weights, new Map(), null).filter((x) => scoreCoverage(x.score) > 0));
   if (pre.length === 0) return { groups: [], statuses, notes, emptyReason: "No candidate met your requirements with enough evidence to rank.", candidateCount: ex.candidates.length };
-  const top = pre.slice(0, MAX_GROUPS);
+  // Budget-aware shortlist ORDER (no data changes): with a budget, candidates whose editorial price is within it are
+  // price-checked first, unknown-price ones next, flagship-tier names (Ultra / Pro Max / Fold / Flip) last. This spends the
+  // limited Search/Fetch/Agent lookups on phones that can actually fit the budget.
+  const budgetTier = (c: Candidate): number => {
+    if (parsed.budgetMax === null) return 0;
+    const ed = c.price?.price ?? null;
+    if (ed !== null) return ed <= parsed.budgetMax ? 0 : 3;
+    return /\b(ultra|pro\s*max|fold\d*|flip\d*)\b/i.test(c.name) ? 2 : 1;
+  };
+  const ordered = pre.map((x, i) => ({ x, i, t: budgetTier(x.c) })).sort((a, b) => a.t - b.t || a.i - b.i).map((y) => y.x);
+  const top = ordered.slice(0, MAX_GROUPS);
 
   // verified offers
   const buildOffers = await resolveBuildOffers(deps);
