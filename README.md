@@ -29,20 +29,73 @@ Comparing prices in India means opening five tabs, squinting at EMI numbers, and
 
 > **The rule we never break:** no fabricated prices, no invented history, no fake deals. If a store can't be read, PricePilot says so.
 
+![Spend less](https://img.shields.io/badge/Spend%20less-TrueCost-13A579?style=for-the-badge)
+![Decide better](https://img.shields.io/badge/Decide%20better-Verified%20evidence-365CF5?style=for-the-badge)
+![Research cost](https://img.shields.io/badge/AI%20research%20cost-metered-1B2540?style=for-the-badge)
+![India first](https://img.shields.io/badge/India-INR%20%C2%B7%20Indian%20retailers-FF9933?style=for-the-badge)
+
 ## Screenshots
 
-<!--
-Add images to docs/screenshots/ and replace the lines below, e.g.
-<img src="docs/screenshots/search.png" width="30%" /> <img src="docs/screenshots/compare.png" width="30%" /> <img src="docs/screenshots/basket.png" width="30%" />
--->
+<p align="center">
+  <img src="docs/screenshots/home-1440.png" alt="PricePilot homepage: search and shop-by-category cards" width="92%" />
+</p>
 
-| Landing | Search results | Price comparison |
+| TrueCost breakdown (mobile) | Research Cost panel | Deal Decision Receipt |
 |:---:|:---:|:---:|
-| _coming soon_ | _coming soon_ | _coming soon_ |
+| <img src="docs/screenshots/truecost-mobile.png" alt="TrueCost breakdown on a retailer card" width="220" /> | <img src="docs/screenshots/research-cost-desktop.png" alt="Research Cost panel with metered TinyFish usage" width="300" /> | <img src="docs/screenshots/receipt-desktop.png" alt="Deal Decision Receipt" width="300" /> |
 
-| Smart basket | AI assistant | Installed app |
+| Saved research (no re-research) | Saved product snapshot | Mobile home |
 |:---:|:---:|:---:|
-| _coming soon_ | _coming soon_ | _coming soon_ |
+| <img src="docs/screenshots/saved-list-390.png" alt="Saved products and reports list" width="200" /> | <img src="docs/screenshots/saved-product-390.png" alt="Saved product snapshot, prices labelled as saved" width="200" /> | <img src="docs/screenshots/home-390.png" alt="Homepage on mobile" width="200" /> |
+
+<sub>TrueCost / Research Cost / Receipt / Saved screenshots use the dev-only mock dataset (labelled MOCK) so no credits were spent; live numbers are in the tables below.</sub>
+
+## How a search runs
+
+```mermaid
+flowchart LR
+    U([Shopper query]) --> P{Intent parser}
+    P -->|"best phone under 50K"| D[Discovery<br/>TinyFish Search + Fetch<br/>budget listing pages first]
+    P -->|"Samsung Galaxy S24 256GB"| X[Exact product]
+    D --> SL[Small shortlist<br/>in-budget first]
+    SL --> X
+    X --> C{Cache?}
+    C -->|hit| R
+    C -->|miss| S[TinyFish Search<br/>5 Indian retailers]
+    S --> F[TinyFish Fetch<br/>read price from page · $0]
+    F -->|price read| M[Exact-variant match]
+    F -->|no price, strong match,<br/>budget left| A[Paid TinyFish Agent<br/>$0.016 / step]
+    A --> M
+    M -->|2 retailers verified| E[[Early stop]]
+    M --> T[TrueCost<br/>listed · minimum · conditional]
+    E --> T
+    T --> R[Verdict + Deal Receipt<br/>+ Research Cost]
+    style A fill:#FFF4E5,stroke:#F59E0B
+    style F fill:#E8FFF4,stroke:#13A579
+    style S fill:#E8FFF4,stroke:#13A579
+    style T fill:#EFF3FF,stroke:#365CF5
+    style R fill:#EFF3FF,stroke:#365CF5
+```
+
+## Measured: paid agent cost before vs after adaptive routing
+
+Same 3 queries, real TinyFish, one run each (2026-11-01). Cost = provider-metered agent steps × $0.016.
+
+```mermaid
+xychart-beta
+    title "Paid agent steps per query (lower is better)"
+    x-axis ["S24 256GB", "Phone < 50K", "Laptop RTX 4050 < 70K"]
+    y-axis "Agent steps" 0 --> 25
+    bar [11, 10, 22]
+    bar [0, 0, 0]
+```
+
+| | Paid agent runs | Agent steps | Calculated cost | Time per query |
+|---|:---:|:---:|:---:|:---:|
+| 🔴 Before (legacy routing) | 6 | 43 | **$0.688** | 110–177 s |
+| 🟢 After (adaptive routing) | 0 | 0 | **$0.00** | 11–21 s |
+
+Live recommendation results after the discovery fixes: **"Best phone under 50K" → 5 verified in-budget phones** (₹39,999–₹48,499), **"Best gaming phone under ₹30K" → 3** (₹26,499–₹29,449), both with **0 paid agent runs**. One sample per query; retailer results vary between runs.
 
 ## How it works (workflow)
 
@@ -234,6 +287,9 @@ See [SECURITY.md](SECURITY.md).
 - Croma / Reliance / Vijay Sales prices need the paid Agent and often still cannot be read.
 - Cost telemetry is in memory per server instance (resets on cold start); Supabase is not connected yet.
 - Budget Rescue (alternatives when nothing fits the budget) is **not implemented**.
+- Saved products/reports live in this browser only (IndexedDB); no cross-device sync. The local price monitor exists in code but is not enabled yet.
+- Recommendations cover smartphones, laptops, headphones and TVs; other categories (monitors, mice, appliances) return an honest "not supported yet".
+- Personal TinyFish key (Settings > TinyFish connection) is stored encrypted in an httpOnly cookie; it needs `PP_KEY_SECRET` on the server.
 - Not affiliated with any retailer.
 
 ## Roadmap
