@@ -47,7 +47,7 @@ export default function AssistantPage() {
         {msgs.map((m, i) => (
           <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
             <div className={cn("max-w-full space-y-3 sm:max-w-[85%]", m.role === "user" && "items-end")}>
-              <div className={cn("whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm", m.role === "user" ? "gradient-bg text-white" : "border border-line bg-surface")}>
+              <div className={cn("whitespace-pre-wrap rounded-xl px-4 py-3 text-sm", m.role === "user" ? "bg-primary text-white" : "border border-line bg-surface")}>
                 {m.content}
               </div>
               {m.search && m.search.offers.slice(0, 3).map((o) => <ProductCard key={o.id} offer={o} query={m.search?.query} />)}
@@ -65,7 +65,7 @@ export default function AssistantPage() {
           e.preventDefault();
           send();
         }}
-        className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] flex gap-2 rounded-2xl border border-line-strong bg-surface p-2 lg:bottom-4"
+        className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] flex gap-2 rounded-xl border border-line-strong bg-surface p-2 lg:bottom-4"
       >
         <label htmlFor="chat-in" className="sr-only">Message</label>
         <input

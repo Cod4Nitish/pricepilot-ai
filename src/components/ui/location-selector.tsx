@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useId, useState } from "react";
-import { MapPin } from "lucide-react";
+import { Loader2, LocateFixed, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
 import { Input } from "./input";
@@ -37,6 +37,8 @@ export function LocationSelector({
   const [value, setValue] = useState("");
   const [saved, setSaved] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [geoMsg, setGeoMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const s = readSavedPincode();
@@ -64,6 +66,47 @@ export function LocationSelector({
     setSaved(v);
     onChange?.(v);
   }
+  function persist(v: string) {
+    try {
+      localStorage.setItem(PINCODE_KEY, v);
+    } catch {
+      /* storage blocked: keep in memory only */
+    }
+    setValue(v);
+    setSaved(v);
+    onChange?.(v);
+  }
+
+  /** One-tap: ask the browser for permission, resolve to a pincode, save it on this device. */
+  function useMyLocation() {
+    setGeoMsg(null);
+    if (!("geolocation" in navigator)) {
+      setGeoMsg("This browser cannot share location. Enter your pincode instead.");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const r = await fetch(`/api/geo/pincode?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+          const j = await r.json();
+          if (!r.ok) throw new Error(j?.error?.message ?? "Lookup failed");
+          persist(j.pincode as string);
+          setGeoMsg(j.area ? `Detected ${j.area} (${j.pincode}). Edit it if this is not your delivery address.` : `Detected ${j.pincode}.`);
+        } catch (err) {
+          setGeoMsg(err instanceof Error ? err.message : "Could not detect your pincode. Enter it manually.");
+        } finally {
+          setLocating(false);
+        }
+      },
+      (err) => {
+        setLocating(false);
+        setGeoMsg(err.code === err.PERMISSION_DENIED ? "Location permission was denied. You can enter your pincode instead." : "Could not get your location. Enter your pincode instead.");
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+  }
+
   function clear() {
     try {
       localStorage.removeItem(PINCODE_KEY);
@@ -78,8 +121,17 @@ export function LocationSelector({
 
   return (
     <form onSubmit={save} className={cn("space-y-2", className)} noValidate>
+      <Button type="button" onClick={useMyLocation} disabled={locating} className="w-full sm:w-auto">
+        {locating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <LocateFixed className="h-4 w-4" aria-hidden />}
+        {locating ? "Finding your location…" : "Use my location"}
+      </Button>
+      {geoMsg && (
+        <p role="status" className="text-xs text-muted">
+          {geoMsg}
+        </p>
+      )}
       <label htmlFor={id} className="flex items-center gap-1.5 text-sm font-semibold">
-        <MapPin className="h-4 w-4 text-primary" aria-hidden /> Delivery pincode
+        <MapPin className="h-4 w-4 text-primary" aria-hidden /> Or enter pincode
       </label>
       <div className="flex gap-2">
         <Input
@@ -103,7 +155,7 @@ export function LocationSelector({
       <p id={`${id}-help`} role={showError ? "alert" : undefined} className={cn("text-xs", showError ? "font-medium text-bad" : "text-muted")}>
         {showError
           ? "Enter a valid 6-digit pincode (it cannot start with 0)."
-          : "Pressing Save stores your pincode only in this browser (localStorage) so local availability can be checked. Remove it any time."}
+          : "Your location is used once to find the pincode and is not stored on our servers. The pincode is saved only in this browser so delivery availability can be checked. Remove it any time."}
       </p>
       {saved && (
         <p role="status" className="flex items-center gap-2 text-xs text-good">

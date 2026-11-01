@@ -1,0 +1,7 @@
+.next
+.next-*
+node_modules
+.env*
+.claude
+qa.log
+dev.log

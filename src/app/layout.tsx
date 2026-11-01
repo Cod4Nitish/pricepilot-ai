@@ -20,13 +20,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070b14",
+  themeColor: "#ffffff",
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
 };
 
-const themeScript = `try{var t=localStorage.getItem('pricepilot:theme');if(t!=='light'){document.documentElement.classList.add('dark')}}catch(e){document.documentElement.classList.add('dark')}`;
+const themeScript = `try{var t=localStorage.getItem('pricepilot:theme');if(t==='dark'){document.documentElement.classList.add('dark')}}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

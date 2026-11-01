@@ -3,7 +3,7 @@ import type { UnitQuantity } from "./schema";
 
 const W = "kg|kgs|gms|gm|g|grams|gram";
 const V = "ml|ltrs|ltr|litres|litre|liters|liter|l";
-const MEAS = `(\d+(?:\.\d+)?)\s*(${W}|${V})\b`;
+const MEAS = String.raw`(\d+(?:\.\d+)?)\s*(${W}|${V})\b`;
 const round = (n: number) => Math.round(n * 1000) / 1000;
 
 function toBase(n: number, u: string): { value: number; unit: "g" | "ml" } {
@@ -19,13 +19,13 @@ export function parseQuantity(text: string | null | undefined): UnitQuantity | n
   if (!text) return null;
   const t = text.replace(/,/g, "").replace(/×/g, "x");
   // N x measure
-  let m = new RegExp(`(\d+)\s*x\s*${MEAS}`, "i").exec(t);
+  let m = new RegExp(String.raw`(\d+)\s*x\s*${MEAS}`, "i").exec(t);
   if (m) {
     const b = toBase(Number(m[2]), m[3]);
     return { value: round(b.value * Number(m[1])), unit: b.unit, raw: m[0] };
   }
   // measure x N
-  m = new RegExp(`${MEAS}\s*x\s*(\d+)\b`, "i").exec(t);
+  m = new RegExp(String.raw`${MEAS}\s*x\s*(\d+)\b`, "i").exec(t);
   if (m) {
     const b = toBase(Number(m[1]), m[2]);
     return { value: round(b.value * Number(m[3])), unit: b.unit, raw: m[0] };
@@ -40,7 +40,7 @@ export function parseQuantity(text: string | null | undefined): UnitQuantity | n
   m = /\b(half\s+)?(\d+(?:\.\d+)?\s*)?dozen\b/i.exec(t);
   if (m) {
     const n = m[2] ? Number(m[2]) : 1;
-    return { value: (m[1] ? 6 : 12 * n), unit: "unit", raw: m[0].trim() };
+    return { value: m[1] ? 6 : 12 * n, unit: "unit", raw: m[0].trim() };
   }
   m = /\b(\d+)\s*(?:pcs|pc|pieces|piece|units|unit|nos|eggs|egg|count|ct|sachets|sachet)\b/i.exec(t);
   if (m) return { value: Number(m[1]), unit: "unit", raw: m[0] };

@@ -12,3 +12,5 @@ dev.log
 .claude/
 skills-lock.json
 supabase/.temp/
+.next-qa
+.next-*

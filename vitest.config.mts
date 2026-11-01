@@ -3,5 +3,13 @@ import path from "node:path";
 
 export default defineConfig({
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
-  test: { include: ["src/lib/__tests__/**/*.test.ts", "src/lib/fast/__tests__/**/*.test.ts"], environment: "node" },
+  test: {
+    include: [
+      "src/lib/__tests__/**/*.test.ts",
+      "src/lib/fast/__tests__/**/*.test.ts",
+      "src/lib/engine/__tests__/**/*.test.ts",
+      "src/components/**/__tests__/**/*.test.ts",
+    ],
+    environment: "node",
+  },
 });

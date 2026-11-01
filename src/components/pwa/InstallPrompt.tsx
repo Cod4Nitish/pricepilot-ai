@@ -150,17 +150,15 @@ export default function InstallPrompt() {
   return (
     <aside
       aria-label="Install PricePilot"
-      className="fixed inset-x-2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto max-w-md rounded-2xl border border-[#3a4a85] bg-[#0F1A3A] p-3 text-white shadow-2xl lg:inset-x-auto lg:bottom-4 lg:right-4 lg:mx-0 lg:w-80 lg:p-4"
+      className="fixed inset-x-2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto max-w-md rounded-2xl border border-[#3a4a85] bg-[#0F1A3A]/95 p-2 pl-3 text-white shadow-2xl backdrop-blur lg:inset-x-auto lg:bottom-4 lg:right-4 lg:mx-0 lg:w-72"
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-2.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icons/icon-192.png" alt="" width={44} height={44} className="h-11 w-11 rounded-xl" />
+        <img src="/icons/icon-192.png" alt="" width={36} height={36} className="h-9 w-9 shrink-0 rounded-lg" />
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">Install PricePilot</p>
+          <p className="text-sm font-semibold leading-tight">Install PricePilot</p>
           {deferred ? (
-            <p className="mt-0.5 text-sm text-slate-300">
-              Add it to your device for quick access to price checks.
-            </p>
+            <p className="text-xs leading-tight text-slate-300">Open it like an app.</p>
           ) : (
             <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-sm text-slate-300">
               <li>
@@ -171,21 +169,21 @@ export default function InstallPrompt() {
               </li>
             </ol>
           )}
-          {deferred && (
-            <button
-              type="button"
-              onClick={install}
-              className="mt-2 min-h-11 rounded-lg bg-gradient-to-r from-[#2D8CFF] to-[#9B5CFF] px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              Install app
-            </button>
-          )}
         </div>
+        {deferred && (
+          <button
+            type="button"
+            onClick={install}
+            className="min-h-10 shrink-0 cursor-pointer rounded-lg bg-primary px-3 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          >
+            Install
+          </button>
+        )}
         <button
           type="button"
           onClick={dismiss}
           aria-label="Dismiss install prompt"
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-slate-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-md text-slate-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M6 6l12 12M18 6L6 18" />

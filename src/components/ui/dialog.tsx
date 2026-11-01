@@ -80,8 +80,8 @@ export function Dialog({ open, onClose, title, description, children, variant = 
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         className={cn(
-          "float-in relative max-h-[88dvh] w-full overflow-y-auto border border-line bg-surface p-5 shadow-pop focus:outline-none sm:max-w-md sm:rounded-3xl",
-          variant === "sheet" ? "safe-bottom rounded-t-3xl" : "rounded-3xl",
+          "float-in relative max-h-[88dvh] w-full overflow-y-auto border border-line bg-surface p-5 shadow-pop focus:outline-none sm:max-w-md sm:rounded-xl",
+          variant === "sheet" ? "safe-bottom rounded-t-xl" : "rounded-xl",
         )}
       >
         <div className="mb-3 flex items-start justify-between gap-3">

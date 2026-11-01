@@ -79,7 +79,7 @@ export default function BasketPage() {
 
       {plan.data && (
         <section className="space-y-4" aria-label="Basket plan">
-          <Card className="border-primary/40 bg-gradient-to-br from-primary/10 to-accent/10">
+          <Card className="border-primary/40 bg-primary/5">
             <p className="text-sm text-muted">Total (verified items only)</p>
             <p className="font-display text-3xl font-bold">{plan.data.totalVerified === null ? "Unknown" : formatINR(plan.data.totalVerified)}</p>
             {plan.data.totalVerified === null && <p className="text-xs text-muted">A total could not be computed, often because delivery charges are unknown.</p>}

@@ -112,7 +112,7 @@ export default function SearchBar({
       <label htmlFor={id} className="sr-only">
         Search for a product, or paste a product link
       </label>
-      <div className={cn("flex items-center gap-2", hero && "rounded-3xl border border-line-strong bg-surface p-2 shadow-pop focus-within:border-primary")}>
+      <div className={cn("flex items-center gap-2", hero && "rounded-xl border border-line-strong bg-surface p-2 focus-within:border-primary")}>
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted" aria-hidden />
           <input
@@ -128,7 +128,7 @@ export default function SearchBar({
             placeholder={compact ? "Search products" : "Search a product or paste a link"}
             className={cn(
               "w-full text-fg placeholder:text-muted",
-              hero ? "h-14 rounded-2xl bg-transparent pl-12 pr-2 text-base outline-none focus-visible:outline-none" : "rounded-2xl border border-line-strong bg-surface pl-12 pr-4 focus:border-primary",
+              hero ? "h-14 rounded-lg bg-transparent pl-12 pr-2 text-base outline-none focus-visible:outline-none" : "rounded-lg border border-line-strong bg-surface pl-12 pr-4 focus:border-primary",
               !hero && (compact ? "h-11 text-base sm:text-sm" : "h-14 text-base"),
             )}
           />
@@ -159,7 +159,7 @@ export default function SearchBar({
             )}
             <button
               type="submit"
-              className="gradient-bg h-12 shrink-0 cursor-pointer rounded-2xl px-5 text-base font-semibold shadow-glow hover:brightness-110 sm:px-7"
+              className="bg-primary text-white h-12 shrink-0 cursor-pointer rounded-lg px-5 text-base font-semibold sm:px-7"
             >
               Compare
             </button>

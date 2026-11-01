@@ -5,6 +5,9 @@ import { ClipboardPaste, Loader2, Mic, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchIntent, MODE_LABEL, type SearchMode } from "./discover-api";
 import { queryFromLink } from "./SearchBar";
+import { Sheet } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { LocationSelector, readSavedPincode } from "@/components/ui/location-selector";
 
 interface SRResult {
   isFinal: boolean;
@@ -68,10 +71,16 @@ export default function SmartSearch({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [route, setRoute] = useState("");
+  const [askLoc, setAskLoc] = useState(false);
+  const pendingRef = useRef<{ text: string; overall: string } | null>(null);
   const recRef = useRef<SR | null>(null);
   const finalRef = useRef("");
 
   useEffect(() => () => recRef.current?.abort(), []);
+
+  function openResults(text: string, chosen: string) {
+    router.push(`/discover?q=${encodeURIComponent(text)}&mode=${chosen}`);
+  }
 
   async function go(raw: string) {
     const link = queryFromLink(raw);
@@ -80,9 +89,11 @@ export default function SmartSearch({
     setBusy(true);
     setNote("");
     let chosen: string = mode;
+    let overall: string = mode;
     if (mode === "auto") {
       try {
         const r = await fetchIntent(text);
+        overall = r.overall;
         const reason = r.items[0]?.reason ?? "";
         setRoute(`Searching ${MODE_LABEL[r.overall]}${r.items.length > 1 ? ` (${r.items.length} items)` : ""}${reason ? `: ${reason}` : ""}`);
       } catch {
@@ -91,8 +102,25 @@ export default function SmartSearch({
     } else {
       setRoute(`Searching ${MODE_LABEL[mode]} (your choice)`);
     }
-    router.push(`/discover?q=${encodeURIComponent(text)}&mode=${chosen}`);
+    // Like Uber or Rapido: when local delivery matters and we do not know where you are, ask first.
+    const needsLocation = overall === "quick" || overall === "both" || overall === "auto";
+    if (needsLocation && !readSavedPincode()) {
+      pendingRef.current = { text, overall: chosen };
+      setAskLoc(true);
+      setBusy(false);
+      return;
+    }
+    openResults(text, chosen);
     setBusy(false);
+  }
+
+  function continueAfterLocation(skip: boolean) {
+    const p = pendingRef.current;
+    pendingRef.current = null;
+    setAskLoc(false);
+    if (!p) return;
+    // Skipping location: only online stores can be compared.
+    openResults(p.text, skip && p.overall !== "ecommerce" ? "ecommerce" : p.overall);
   }
 
   async function paste() {
@@ -174,7 +202,7 @@ export default function SmartSearch({
       <div
         className={cn(
           "flex items-center gap-1.5",
-          hero ? "rounded-3xl border border-line-strong bg-surface p-2 shadow-pop focus-within:border-primary" : "rounded-2xl border border-line-strong bg-surface pr-1 focus-within:border-primary",
+          hero ? "rounded-xl border border-line-strong bg-surface p-2 focus-within:border-primary" : "rounded-lg border border-line-strong bg-surface pr-1 focus-within:border-primary",
         )}
       >
         <div className="relative min-w-0 flex-1">
@@ -189,7 +217,7 @@ export default function SmartSearch({
             autoFocus={autoFocus}
             autoComplete="off"
             enterKeyHint="search"
-            placeholder={listening ? "Listening..." : hero ? "Try “milk, eggs and a Samsung S24”" : "Search or speak"}
+            placeholder={listening ? "Listening..." : hero ? "Search or speak…" : "Search or speak"}
             className={cn(
               "w-full min-w-0 bg-transparent pl-11 pr-2 text-base text-fg outline-none placeholder:text-muted focus-visible:outline-none",
               hero ? "h-14" : "h-11 sm:text-sm",
@@ -201,7 +229,7 @@ export default function SmartSearch({
             type="button"
             onClick={paste}
             aria-label="Paste from clipboard"
-            className="grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-xl text-muted hover:bg-surface2 hover:text-fg"
+            className="hidden h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-xl text-muted hover:bg-surface2 hover:text-fg sm:grid"
           >
             <ClipboardPaste className="h-5 w-5" aria-hidden />
           </button>
@@ -210,7 +238,7 @@ export default function SmartSearch({
           type="button"
           onClick={() => setLang((l) => (l === "en-IN" ? "hi-IN" : "en-IN"))}
           aria-label={`Voice language: ${lang === "en-IN" ? "English" : "Hindi"}. Press to switch.`}
-          className={cn("h-11 min-w-11 shrink-0 cursor-pointer rounded-xl px-2 text-xs font-bold text-muted hover:bg-surface2 hover:text-fg", !hero && "hidden sm:block")}
+          className={cn("h-11 min-w-11 shrink-0 cursor-pointer rounded-xl px-2 text-xs font-bold text-muted hover:bg-surface2 hover:text-fg", "hidden sm:block")}
         >
           {lang === "en-IN" ? "EN" : "हि"}
         </button>
@@ -231,48 +259,34 @@ export default function SmartSearch({
           type="submit"
           disabled={busy}
           aria-label="Search"
-          className={cn("gradient-bg grid shrink-0 cursor-pointer place-items-center font-semibold shadow-glow hover:brightness-110 disabled:opacity-60", hero ? "h-12 rounded-2xl px-6" : "h-10 w-10 rounded-xl")}
+          className={cn("bg-primary text-white grid shrink-0 cursor-pointer place-items-center font-semibold disabled:opacity-60", hero ? "h-12 w-12 rounded-lg sm:w-auto sm:px-6" : "h-10 w-10 rounded-xl")}
         >
-          {busy ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : hero ? "Compare" : <Search className="h-5 w-5" aria-hidden />}
+          {busy ? (
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+          ) : hero ? (
+            <>
+              <span className="hidden sm:inline">Compare</span>
+              <Search className="h-5 w-5 sm:hidden" aria-hidden />
+            </>
+          ) : (
+            <Search className="h-5 w-5" aria-hidden />
+          )}
         </button>
       </div>
 
-      {hero ? (
-        <div role="radiogroup" aria-label="Where to search" className="mt-3 inline-flex flex-wrap gap-1 rounded-xl border border-line bg-surface p-1">
-          {MODES.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              role="radio"
-              aria-checked={mode === m.value}
-              onClick={() => setMode(m.value)}
-              className={cn("min-h-10 cursor-pointer rounded-lg px-3.5 text-sm font-semibold", mode === m.value ? "gradient-bg" : "text-muted hover:text-fg")}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-1 flex items-center gap-2">
-          <label htmlFor={`${id}-mode`} className="sr-only">Where to search</label>
-          <select
-            id={`${id}-mode`}
-            value={mode}
-            onChange={(e) => setMode(e.target.value as SearchMode)}
-            className="h-8 rounded-lg border border-line bg-surface2 px-2 text-xs font-medium text-muted"
-          >
-            {MODES.map((m) => (
-              <option key={m.value} value={m.value}>{m.value === "auto" ? "Auto-route" : m.label}</option>
-            ))}
-          </select>
-          <p role="status" aria-live="polite" className="min-w-0 flex-1 truncate text-xs text-muted empty:hidden">{status}</p>
-        </div>
-      )}
-      {hero && (
-        <p role="status" aria-live="polite" className="mt-2 text-sm text-muted empty:hidden">
-          {status}
+      {/* Routing is automatic: no manual mode switch. The status line explains what was chosen. */}
+      <p role="status" aria-live="polite" className={cn("text-muted empty:hidden", hero ? "mt-2 text-sm" : "mt-1 truncate text-xs")}>
+        {status}
+      </p>
+      <Sheet open={askLoc} onClose={() => continueAfterLocation(true)} title="Where should we check delivery?">
+        <p className="mb-4 text-sm text-muted">
+          Quick-delivery stores show different prices and stock in each area. Allow your location once and we will check what is available near you.
         </p>
-      )}
+        <LocationSelector onChange={(pin) => pin && continueAfterLocation(false)} />
+        <Button type="button" variant="ghost" className="mt-3 w-full" onClick={() => continueAfterLocation(true)}>
+          Skip, compare online stores only
+        </Button>
+      </Sheet>
     </form>
   );
 }

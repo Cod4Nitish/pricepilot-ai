@@ -78,7 +78,7 @@ export default function RegisterSW() {
           <button
             type="button"
             onClick={reload}
-            className="rounded-lg bg-gradient-to-r from-[#2D8CFF] to-[#9B5CFF] px-3 py-1.5 font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            className="rounded-lg bg-primary px-3 py-1.5 font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           >
             Reload
           </button>

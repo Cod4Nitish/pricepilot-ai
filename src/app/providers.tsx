@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 type Theme = "dark" | "light";
-const ThemeCtx = createContext<{ theme: Theme; setTheme: (t: Theme) => void }>({ theme: "dark", setTheme: () => {} });
+const ThemeCtx = createContext<{ theme: Theme; setTheme: (t: Theme) => void }>({ theme: "light", setTheme: () => {} });
 export const useTheme = () => useContext(ThemeCtx);
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -13,7 +13,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         defaultOptions: { queries: { staleTime: 5 * 60_000, refetchOnWindowFocus: false, retry: false } },
       }),
   );
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("light");
 
   useEffect(() => {
     setThemeState(document.documentElement.classList.contains("dark") ? "dark" : "light");
