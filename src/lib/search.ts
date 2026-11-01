@@ -6,7 +6,7 @@ import { getCostConfig, type CostConfig } from "./cost/config";
 import { costContext } from "./cost/context";
 import { meter, type AgentSkipReason } from "./cost/meter";
 import { discountPct, extractFromMarkdown, parseInr } from "./extract";
-import { isAccessoryTitle, isJunkTitle, parseMaxPrice, parseQuery, scoreListing, specFromTitle, type ParsedQuery } from "./match";
+import { isAccessoryTitle, isJunkTitle, isRelevantOfferText, parseMaxPrice, parseQuery, scoreListing, specFromTitle, type ParsedQuery } from "./match";
 import { RETAILERS, RETAILER_BY_ID, discoverProductLinks, isProductUrl, productKey, type RetailerConfig } from "./retailers";
 import { RunTracker } from "./runs";
 import { canonicalUrl, looksLikeUrl, validateRetailerUrl } from "./ssrf";
@@ -705,8 +705,10 @@ async function runPipeline(
     }
     if (w.price === null) notes.push("Price could not be confirmed from the page.");
     if (w.cachedNote) notes.push(w.cachedNote);
+    // page-wide promotions for other categories (air fryer, storage devices...) are not offers for this product
+    const offerLines = w.offers.filter((t) => isRelevantOfferText(t, w.title));
     offers.push(
-      makeOffer(w.c.retailer, w.c.url, w.title, w.price, w.mrp, w.availability, w.offers, m.spec, m.hardExcluded ? 0 : conf, notes, w.verification, w.checkedAt ?? now(), w.imageUrl, w.evidence, w.extra),
+      makeOffer(w.c.retailer, w.c.url, w.title, w.price, w.mrp, w.availability, offerLines, m.spec, m.hardExcluded ? 0 : conf, notes, w.verification, w.checkedAt ?? now(), w.imageUrl, w.evidence, w.extra),
     );
   }
 

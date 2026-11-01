@@ -100,6 +100,23 @@ const limiter = new Limiter(6);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// After a 429, pause that endpoint (search / fetch / agent) for Retry-After (or a backoff) instead of hammering it.
+const cooldownUntil = new Map<string, number>();
+const MAX_COOLDOWN_WAIT_MS = 8_000;
+function endpointOf(url: string): string {
+  return url.startsWith(SEARCH_URL) ? "search" : url.startsWith(FETCH_URL) ? "fetch" : "agent";
+}
+/** Retry-After as seconds or HTTP date -> ms (capped), else null. */
+export function retryAfterMs(h: string | null): number | null {
+  if (!h) return null;
+  const s = Number(h);
+  const ms = Number.isFinite(s) ? s * 1000 : Date.parse(h) - Date.now();
+  return Number.isFinite(ms) && ms > 0 ? Math.min(ms, 60_000) : null;
+}
+export function resetCooldowns(): void {
+  cooldownUntil.clear();
+}
+
 function statusToError(status: number, body: string): TinyFishError {
   const msg = `TinyFish HTTP ${status}${body ? `: ${body.slice(0, 200)}` : ""}`;
   if (status === 401 || status === 403) return new TinyFishError("auth", "TinyFish rejected the API key.", status);
@@ -121,7 +138,12 @@ async function request<T>(
   const timeoutMs = opts.timeoutMs ?? 60_000;
   let lastErr: TinyFishError | undefined;
 
+  const ep = endpointOf(url);
+  let hits429 = 0;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const wait = (cooldownUntil.get(ep) ?? 0) - Date.now();
+    if (wait > MAX_COOLDOWN_WAIT_MS) throw new TinyFishError("rate_limited", `TinyFish ${ep} is rate limited; not retried (cooling down).`, 429);
+    if (wait > 0) await sleep(wait);
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeoutMs);
     try {
@@ -138,6 +160,12 @@ async function request<T>(
       );
       if (!res.ok) {
         const text = await res.text().catch(() => "");
+        if (res.status === 429) {
+          const ra = retryAfterMs(res.headers.get("retry-after")) ?? base * 2 ** (attempt + 2);
+          cooldownUntil.set(ep, Math.max(cooldownUntil.get(ep) ?? 0, Date.now() + ra));
+          // one retry at most for 429 (after the cooldown), never an aggressive loop
+          if (++hits429 >= 2) throw new TinyFishError("rate_limited", "TinyFish rate limit hit twice; not retried again.", 429);
+        }
         throw statusToError(res.status, text);
       }
       return (await res.json()) as T;
@@ -146,8 +174,8 @@ async function request<T>(
       else if ((e as Error)?.name === "AbortError") lastErr = new TinyFishError("timeout", `TinyFish request timed out after ${timeoutMs}ms.`);
       else lastErr = new TinyFishError("network", `TinyFish network error: ${(e as Error)?.message ?? "unknown"}`);
       // timeouts are not retried (cost/latency protection); 402/401/4xx never retried
-      if (!lastErr.retryable || attempt === retries) throw lastErr;
-      await sleep(base * 2 ** attempt + Math.floor(Math.random() * (base / 2)));
+      if (!lastErr.retryable || attempt === retries || (lastErr.kind === "rate_limited" && hits429 >= 2)) throw lastErr;
+      if (lastErr.kind !== "rate_limited") await sleep(base * 2 ** attempt + Math.floor(Math.random() * (base / 2))); // 429 waits via the cooldown above
     } finally {
       clearTimeout(timer);
     }

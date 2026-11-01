@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { extractFromMarkdown, pickProductImage } from "../extract";
+import { isRelevantOfferText } from "../match";
 
 // Shape of a real Amazon.in product page as returned by TinyFish Fetch (trimmed), 2026-11-01.
 const AMAZON = [
@@ -73,6 +74,18 @@ describe("non-price rupee amounts (real pages, 2026-11-01)", () => {
     expect(vijay.price).toBe(69990);
     const amz = extractFromMarkdown("# ASUS Gaming V16 RTX 4050\n\n**For products worth more than INR 25000, we only offer Self-Return option.\n\n₹74,990.00 with 25 percent savings\n\nAdd to Cart");
     expect(amz.price).toBe(74990);
+  });
+});
+
+describe("offer relevance (real Flipkart S24 page lines)", () => {
+  const phone = "Samsung Galaxy S24 5G (256 GB Storage, 8 GB RAM)";
+  it("drops promotions for other categories, keeps bank/exchange lines", () => {
+    expect(isRelevantOfferText("Unlock Air fryer coupon • 10% off", phone)).toBe(false);
+    expect(isRelevantOfferText("Unlock Storage Devices coupon • 10% off", phone)).toBe(false);
+    expect(isRelevantOfferText("Bank offers", phone)).toBe(true);
+    expect(isRelevantOfferText("Exchange offer", phone)).toBe(true);
+    expect(isRelevantOfferText("10% instant discount on HDFC Bank credit cards", phone)).toBe(true);
+    expect(isRelevantOfferText("Laptop bag coupon 20% off", "HP Victus Gaming Laptop RTX 4050")).toBe(true);
   });
 });
 

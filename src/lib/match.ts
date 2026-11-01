@@ -223,6 +223,31 @@ export function isWidgetTitle(title: string | null | undefined): boolean {
   return JUNK_TITLE_RE.test((title ?? "").replace(/\s+/g, " ").trim());
 }
 
+// Product categories that page-wide promotions name ("Unlock Air fryer coupon", "Storage Devices coupon").
+const OFFER_CATEGORIES: [RegExp, RegExp][] = [
+  [/air ?fryers?/i, /air ?fryer/i],
+  [/storage devices?|pen ?drives?|memory cards?|hard ?drives?|\bssds?\b/i, /\bssd\b|pen ?drive|memory card|hard drive|storage device/i],
+  [/\b(?:tvs?|televisions?|smart tvs?)\b/i, /\btv\b|television/i],
+  [/refrigerators?|fridges?/i, /refrigerator|fridge/i],
+  [/washing machines?/i, /washing machine/i],
+  [/air conditioners?|\bacs?\b/i, /air conditioner|\bac\b/i],
+  [/\blaptops?\b|notebooks?/i, /laptop|notebook|macbook/i],
+  [/headphones?|earbuds|earphones?|\btws\b/i, /headphone|earbud|earphone|\btws\b|airpods/i],
+  [/smart ?watch(?:es)?/i, /watch/i],
+  [/kitchen|appliances?|mixers?|grinders?|microwaves?/i, /kitchen|mixer|grinder|microwave/i],
+  [/fashion|clothing|apparel|footwear|shoes|beauty|grocery|groceries|furniture|mattress|books?|toys?|home decor/i, /^$/],
+];
+/**
+ * Is a retailer offer line about THIS product? Drops page-wide promotions that name another product category
+ * (e.g. an air-fryer or storage-device coupon on a phone page). Generic bank/EMI/exchange lines are kept (still conditional).
+ */
+export function isRelevantOfferText(offer: string, productTitle: string): boolean {
+  for (const [mention, own] of OFFER_CATEGORIES) {
+    if (mention.test(offer) && !own.test(productTitle)) return false;
+  }
+  return true;
+}
+
 export function isJunkTitle(title: string | null | undefined): boolean {
   const t = (title ?? "").replace(/\s+/g, " ").trim();
   if (t.length < 4) return true;

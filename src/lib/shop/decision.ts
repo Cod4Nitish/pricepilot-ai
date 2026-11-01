@@ -137,7 +137,9 @@ export function buildDecision(offers: ShopOffer[], weightsIn?: Partial<ShopWeigh
     notes.push(`Best overall (${top.o.retailer}) differs from cheapest listed (${cl.retailer}): ${money((top.o.listedPrice as number) - (cl.listedPrice as number))} more, but it scores higher on ${top.delivery > 0 ? "delivery and/or " : ""}evidence.`);
   }
   if (conditions.length) notes.push("No unconditional winner: " + conditions.join(" "));
-  const bestOverall = pick(top.o, Math.round(top.score * 100), reasons, conditions);
+  // a "best overall" verdict needs a real comparison: never from a single verified retailer
+  const bestOverall = singleStoreOnly ? null : pick(top.o, Math.round(top.score * 100), reasons, conditions);
+  if (singleStoreOnly) notes.push("No Best Overall verdict: comparison coverage is limited to one verified retailer.");
 
   return { cheapestListed, cheapestPayable, fastest, bestOverall, notes, singleStoreOnly };
 }

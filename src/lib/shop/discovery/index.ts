@@ -12,7 +12,7 @@ export * from "./types";
 export { verifyFacts, evidenceInPage, normText } from "./evidence";
 
 const MAX_GROUPS = 5;
-const OFFER_CONCURRENCY = 3;
+const OFFER_CONCURRENCY = 2; // each lookup fans out to 5 retailer searches: keep bursts small to avoid TinyFish 429s
 
 export interface DiscoveryResult {
   groups: ProductGroup[];
