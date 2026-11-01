@@ -35,7 +35,7 @@ export function Tabs<T extends string>({
           onKeyDown={(e) => onKey(e, i)}
           onClick={() => onChange(it.value)}
           className={cn(
-            "h-10 min-w-11 cursor-pointer rounded-lg px-4 text-sm font-medium transition-colors",
+            "h-11 min-w-11 sm:h-10 cursor-pointer rounded-lg px-4 text-sm font-medium transition-colors",
             value === it.value ? "bg-primary text-white" : "text-muted hover:text-fg",
           )}
         >

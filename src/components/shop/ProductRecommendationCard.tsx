@@ -47,7 +47,7 @@ export default function ProductRecommendationCard({
             <Badge tone="neutral">#{group.rank}</Badge>
             {provisional && <Badge tone="warn" className="border-fg/30 bg-sun text-fg">PROVISIONAL</Badge>}
           </div>
-          <h3 id={`g-${group.id}-h`} className="font-display text-base font-semibold leading-snug">{group.name}</h3>
+          <h3 id={`g-${group.id}-h`} className="font-display text-base font-semibold leading-snug line-clamp-2 sm:line-clamp-none" title={group.name}>{group.name}</h3>
           {group.lowestVerified ? (
             <p className="text-sm">
               Verified lowest price <span className="tabular font-bold">{rupees(group.lowestVerified.price)}</span> at {group.lowestVerified.retailer}
@@ -66,7 +66,7 @@ export default function ProductRecommendationCard({
               <dd className="break-words text-sm font-medium">
                 {s.value}
                 {s.unit ? ` ${s.unit}` : ""}{" "}
-                <a href={s.sourceUrl} target="_blank" rel="noopener noreferrer" title={s.evidence} className="text-xs font-normal text-primary underline">
+                <a href={s.sourceUrl} target="_blank" rel="noopener noreferrer" title={s.evidence} className="relative text-xs font-normal text-primary underline after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-['']">
                   source<span className="sr-only"> for {s.label} (opens in a new tab)</span>
                 </a>
               </dd>

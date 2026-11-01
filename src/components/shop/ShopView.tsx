@@ -287,12 +287,12 @@ export default function ShopView() {
       )}
 
       {/* Search edit + delivery chip */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:py-0">
         <button
           type="button"
           onClick={() => setPinOpen(true)}
           aria-haspopup="dialog"
-          className="chip-3d inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border border-line-strong bg-surface px-4 text-sm font-semibold"
+          className="chip-3d inline-flex min-h-11 shrink-0 whitespace-nowrap cursor-pointer items-center gap-1.5 rounded-full border border-line-strong bg-surface px-4 text-sm font-semibold"
         >
           <MapPin className="h-4 w-4 text-primary" aria-hidden />
           {pin ? <>Delivery to <span className="tabular">{pin}</span></> : "Set delivery pincode"}
@@ -544,7 +544,7 @@ export default function ShopView() {
 
 function SortControl({ sort, onChange }: { sort: ShopSort; onChange: (s: ShopSort) => void }) {
   return (
-    <div role="group" aria-label="Sort results" className="flex flex-wrap items-center gap-1.5">
+    <div role="group" aria-label="Sort results" className="flex shrink-0 items-center gap-1.5 sm:flex-wrap">
       {SORTS.map((s) => (
         <button
           key={s.id}
@@ -552,7 +552,7 @@ function SortControl({ sort, onChange }: { sort: ShopSort; onChange: (s: ShopSor
           aria-pressed={sort === s.id}
           onClick={() => onChange(s.id)}
           className={cn(
-            "chip-3d min-h-11 cursor-pointer rounded-full border px-4 text-sm font-semibold",
+            "chip-3d min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-full border px-4 text-sm font-semibold",
             sort === s.id ? "border-primary bg-primary text-white" : "border-line-strong bg-surface",
           )}
         >

@@ -14,7 +14,7 @@ export const buttonVariants = cva(
         danger: "bg-bad/10 text-bad border border-bad/40 hover:bg-bad/20",
         verified: "bg-good/10 text-good border border-good/40 hover:bg-good/20",
       },
-      size: { sm: "h-10 px-3.5", md: "h-11 px-5", lg: "h-12 px-7 text-base", icon: "h-11 w-11" },
+      size: { sm: "h-11 px-3.5 sm:h-10", md: "h-11 px-5", lg: "h-12 px-7 text-base", icon: "h-11 w-11" },
     },
     defaultVariants: { variant: "primary", size: "md" },
   },

@@ -2,29 +2,33 @@
 <html lang="en-IN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0B1226">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FBFBF8">
 <title>Offline - PricePilot AI</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 20% 0%,#1a2a5e 0,#070B1A 55%);color:#e8ecf8;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#fbfbf8;color:#202124;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 main{max-width:420px;text-align:center}
 img{width:88px;height:88px;border-radius:22px}
 h1{font-size:1.5rem;margin:20px 0 8px}
-p{color:#a9b4d6;line-height:1.55;margin:8px 0}
-.badge{display:inline-block;margin-top:12px;padding:6px 12px;border-radius:999px;border:1px solid #3a4a85;background:#0f1a3a;color:#c9b8ff;font-size:.85rem}
-button{margin-top:24px;padding:12px 22px;border:0;border-radius:12px;font-size:1rem;font-weight:600;color:#fff;background:linear-gradient(135deg,#2D8CFF,#9B5CFF);cursor:pointer}
-button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+p{color:#5a5d63;line-height:1.55;margin:8px 0}
+.actions{margin-top:24px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+a,button{padding:12px 22px;border-radius:999px;font-size:1rem;font-weight:600;cursor:pointer;text-decoration:none;font-family:inherit}
+a{background:#405dea;color:#fff;border:0}
+button{background:#fff;color:#202124;border:1px solid rgb(30 32 37 / .75)}
+a:focus-visible,button:focus-visible{outline:2px solid #405dea;outline-offset:3px}
 </style>
 </head>
 <body>
-<main role="main">
-<img src="/icons/icon-192.png" alt="PricePilot AI logo" width="88" height="88">
-<h1>You are offline</h1>
-<p>Live prices are unavailable offline. We will not show you stale prices as if they were current.</p>
-<p>Any data saved on this device is labelled with the time it was last updated, so you can judge how fresh it is.</p>
-<span class="badge">Reconnect to see live prices</span><br>
+<main>
+<img src="/icons/icon-192.png" alt="" width="88" height="88">
+<h1>You're offline</h1>
+<p>You're offline. Saved products (on this device) are still available at <a href="/saved" style="padding:0;background:none;color:#354fcb;text-decoration:underline">/saved</a>.</p>
+<p>Live prices need a connection. We never show stored prices as if they were current.</p>
+<div class="actions">
+<a href="/saved">Open saved products</a>
 <button type="button" onclick="location.reload()">Try again</button>
+</div>
 </main>
 </body>
 </html>

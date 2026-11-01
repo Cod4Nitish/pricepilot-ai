@@ -153,7 +153,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main
         id="main-content"
         tabIndex={-1}
-        className="mx-auto max-w-6xl px-4 pb-28 pt-6 focus:outline-none sm:px-6 lg:pb-12 [html[data-install]_&]:pb-48 lg:[html[data-install]_&]:pb-12"
+        className="mx-auto max-w-6xl px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-4 focus:outline-none sm:px-6 sm:pt-6 lg:pb-12 [html[data-install]_&]:pb-48 lg:[html[data-install]_&]:pb-12"
       >
         <motion.div key={path} initial={reduce ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}>
           {children}

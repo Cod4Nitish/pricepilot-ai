@@ -61,7 +61,7 @@ export default function HomePage() {
       <footer className="flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-line pt-6 text-sm text-muted">
         <span>PricePilot</span>
         <a href="https://github.com/Cod4Nitish/pricepilot-ai" className="inline-flex min-h-11 items-center hover:text-fg hover:underline" rel="noreferrer">GitHub</a>
-        <a href="https://github.com/Cod4Nitish/pricepilot-ai/tree/main/docs" className="inline-flex min-h-11 items-center hover:text-fg hover:underline" rel="noreferrer">Docs</a>
+        <a href="https://github.com/Cod4Nitish/pricepilot-ai/tree/main/docs" className="inline-flex min-h-11 min-w-11 items-center justify-center hover:text-fg hover:underline" rel="noreferrer">Docs</a>
         <Link href="/settings" className="inline-flex min-h-11 items-center hover:text-fg hover:underline">Settings</Link>
       </footer>
     </div>

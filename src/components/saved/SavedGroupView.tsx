@@ -142,7 +142,7 @@ export function SavedSpecs({ g }: { g: SavedGroup }) {
           <dd className="break-words text-sm font-medium">
             {s.value}
             {s.unit ? ` ${s.unit}` : ""}{" "}
-            <a href={s.sourceUrl} target="_blank" rel="noopener noreferrer" title={s.evidence} className="text-xs font-normal text-primary underline">
+            <a href={s.sourceUrl} target="_blank" rel="noopener noreferrer" title={s.evidence} className="relative text-xs font-normal text-primary underline after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-['']">
               source<span className="sr-only"> for {s.label} (opens in a new tab)</span>
             </a>
           </dd>

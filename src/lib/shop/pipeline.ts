@@ -3,6 +3,7 @@
 import { TtlCache } from "@/lib/cache";
 import { RunTracker } from "@/lib/runs";
 import { getCategoryConfig } from "./categories";
+import { meetsRequirements, requirementsEmptyMessage } from "./requirements";
 import { resolveAnthropicKey, resolveBuildDecision, resolveBuildOffers } from "./discovery/deps";
 import { gatherSpecs, runDiscovery } from "./discovery";
 import { filterVariantConflicts, finalizeDecision, lowestVerified, makeGroup, mergeStatuses } from "./discovery/group";
@@ -139,6 +140,16 @@ export async function runShop(input: ShopInput, deps: ShopDeps = {}): Promise<Sh
     else if (parsed.searchIntent === "EXACT_PRODUCT" && !parsed.model && !getCategoryConfig(parsed.category)) res = await generic(parsed, { base, pincode, weights, input, deps, log, year });
     else res = await exact(parsed, { base, pincode, weights, input, deps, log });
 
+    // stage 3 (final): never display a product that contradicts an explicitly requested brand / product type
+    if (parsed.searchIntent !== "PRODUCT_COMPARISON" && res.groups.length) {
+      const before = res.groups.length;
+      res.groups = res.groups.filter((g) => meetsRequirements(g.name, parsed).ok);
+      if (res.groups.length < before) log(`${before - res.groups.length} product(s) removed: wrong brand or product type for this request`, "warn");
+      if (!res.groups.length) {
+        const msg = requirementsEmptyMessage(parsed) ?? "No product matched your request.";
+        res = { ...res, summary: msg, emptyReason: msg };
+      }
+    }
     res.groups = sortGroups(res.groups, sort);
     res.statuses = mergeStatuses(res.statuses);
     log(`Done: ${res.groups.length} product group(s)`, res.groups.length ? "ok" : "warn");
@@ -242,7 +253,7 @@ async function generic(parsed: ParsedQuery, ctx: Ctx): Promise<ShopResponse> {
     return emptyRes(ctx, `Retailer search failed${e instanceof Error ? `: ${e.message.slice(0, 100)}` : ""}.`, []);
   }
   const statuses: SourceStatus[] = sr.statuses.map((s) => ({ source: s.retailer, state: s.state === "disabled" ? "disabled" : s.state, message: s.message, latencyMs: s.latencyMs }) as SourceStatus);
-  const listings = sr.offers.filter((o) => o.matchConfidence >= 0.5);
+  const listings = sr.offers.filter((o) => o.matchConfidence >= 0.5 && meetsRequirements(o.title, parsed).ok);
   const byTitle = new Map<string, typeof listings>();
   for (const o of listings) {
     const k = cleanProductTitle(o.title).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 70);
@@ -270,7 +281,7 @@ async function generic(parsed: ParsedQuery, ctx: Ctx): Promise<ShopResponse> {
   const verified = groups.filter((g) => g.lowestVerified).length;
   ctx.log(`General search: ${groups.length} product(s), ${verified} with a verified price`, groups.length ? "ok" : "warn");
   if (!groups.length) {
-    return emptyRes(ctx, `No matching listings with readable details were found for "${core}" at the stores we check. Try a more specific product name or brand.`, statuses);
+    return emptyRes(ctx, requirementsEmptyMessage(parsed) ?? `No matching listings with readable details were found for "${core}" at the stores we check. Try a more specific product name or brand.`, statuses);
   }
   const summary = [
     `${groups.length} matching product(s) for "${core}"${parsed.budgetMax !== null ? ` within ${inr(parsed.budgetMax)}` : ""}; ${verified} with a verified store price.`,

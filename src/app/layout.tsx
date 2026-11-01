@@ -15,12 +15,21 @@ export const metadata: Metadata = {
     "AI-powered price comparison across Indian retailers. Every price is labelled with how it was verified.",
   manifest: "/manifest.webmanifest",
   applicationName: "PricePilot AI",
-  appleWebApp: { capable: true, title: "PricePilot AI", statusBarStyle: "black-translucent" },
-  icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "PricePilot AI", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#ffffff",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FBFBF8" },
+    { media: "(prefers-color-scheme: dark)", color: "#14151A" },
+  ],
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,

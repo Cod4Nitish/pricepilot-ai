@@ -1,17 +1,18 @@
-/* PricePilot AI service worker. Bump VERSION to invalidate caches. */
-const VERSION = "v1";
+/* PricePilot AI service worker. Bump VERSION to invalidate caches.
+ * Policy (see CLAUDE.md): /api/** is NEVER cached or served from cache (prices, keys, cookies).
+ * Cache-first only for the static shell + hashed assets. HTML is network-first with offline fallback.
+ */
+const VERSION = "v2";
 const SHELL_CACHE = `pricepilot-shell-${VERSION}`;
 const PAGE_CACHE = `pricepilot-pages-${VERSION}`;
 const STATIC_CACHE = `pricepilot-static-${VERSION}`;
-const API_CACHE = `pricepilot-api-${VERSION}`;
-const ALL_CACHES = [SHELL_CACHE, PAGE_CACHE, STATIC_CACHE, API_CACHE];
+const ALL_CACHES = [SHELL_CACHE, PAGE_CACHE, STATIC_CACHE];
 
 const NAV_TIMEOUT_MS = 4000;
-const API_TIMEOUT_MS = 8000;
 
 const PRECACHE = [
-  "/",
   "/offline.html",
+  "/saved",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -22,23 +23,33 @@ const PRECACHE = [
   "/icons/icon.svg",
 ];
 
-// Auth/private data: never cached, never served from cache.
-const PRIVATE_API = ["/api/watchlist", "/api/alerts", "/api/assistant", "/api/cron"];
-// Private pages: never stored in the page cache.
+// Only these page shells are stored for offline use. They render no server-fetched prices:
+// /saved reads IndexedDB on the device; it renders no server data.
+const OFFLINE_PAGES = ["/saved"];
+// Never stored in any cache.
 const PRIVATE_PAGES = ["/watchlist", "/alerts", "/login", "/auth", "/account"];
 
-const startsWithAny = (path, list) =>
-  list.some((p) => path === p || path.startsWith(p + "/"));
+const startsWithAny = (path, list) => list.some((p) => path === p || path.startsWith(p + "/"));
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(SHELL_CACHE)
-      .then((cache) =>
-        // Tolerate individual failures so install still succeeds.
-        Promise.all(PRECACHE.map((url) => cache.add(url).catch(() => undefined)))
-      )
-      .then(() => self.skipWaiting())
+    (async () => {
+      const shell = await caches.open(SHELL_CACHE);
+      await Promise.all(PRECACHE.map((url) => shell.add(url).catch(() => undefined)));
+      // Warm the JS/CSS chunks the /saved shell needs so it can boot offline.
+      try {
+        const res = await fetch("/saved", { credentials: "same-origin" });
+        if (res.ok) {
+          const html = await res.text();
+          const assets = Array.from(html.matchAll(/["'](\/_next\/static\/[^"'\s]+)["']/g), (m) => m[1]);
+          const stat = await caches.open(STATIC_CACHE);
+          await Promise.all([...new Set(assets)].map((u) => stat.add(u).catch(() => undefined)));
+        }
+      } catch (e) {
+        /* offline during install: chunks get cached on first visit instead */
+      }
+      await self.skipWaiting();
+    })()
   );
 });
 
@@ -67,30 +78,21 @@ function withTimeout(promise, ms) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("timeout")), ms);
     promise.then(
-      (v) => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        reject(e);
-      }
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
     );
   });
 }
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== "GET") return; // never touch (or cache) POST/PUT/etc.
+  if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   const path = url.pathname;
 
-  if (path.startsWith("/api/")) {
-    if (startsWithAny(path, PRIVATE_API)) return; // straight to network, no caching
-    event.respondWith(apiNetworkFirst(req));
-    return;
-  }
+  // Hard rule: API traffic always goes straight to the network, untouched.
+  if (path.startsWith("/api/")) return;
 
   if (req.mode === "navigate") {
     event.respondWith(navigate(req, path));
@@ -103,28 +105,32 @@ self.addEventListener("fetch", (event) => {
     path === "/manifest.webmanifest" ||
     req.destination === "font"
   ) {
-    event.respondWith(staticAsset(req));
+    event.respondWith(cacheFirst(req));
   }
 });
 
+// Network-first for HTML. Only local-data page shells are kept for offline use;
+// pages that render prices are never served from cache (cached prices must never look live).
 async function navigate(req, path) {
-  const cache = await caches.open(PAGE_CACHE);
-  const isPrivate = startsWithAny(path, PRIVATE_PAGES);
+  const canStore = startsWithAny(path, OFFLINE_PAGES) && !startsWithAny(path, PRIVATE_PAGES);
   try {
     const res = await withTimeout(fetch(req), NAV_TIMEOUT_MS);
-    if (res.ok && !isPrivate) {
-      cache.put(req, res.clone()).catch(() => undefined);
+    if (res.ok && canStore) {
+      const cache = await caches.open(PAGE_CACHE);
+      cache.put(path, res.clone()).catch(() => undefined);
     }
     return res;
   } catch (err) {
-    if (!isPrivate) {
-      const cached = (await cache.match(req)) || (await caches.match(req));
+    if (canStore) {
+      const cached =
+        (await caches.match(path, { ignoreSearch: true })) ||
+        (path === "/saved" ? await caches.match("/saved") : undefined);
       if (cached) return cached;
     }
     const offline = await caches.match("/offline.html");
     return (
       offline ||
-      new Response("You are offline. Live prices are unavailable.", {
+      new Response("You're offline. Saved products (on this device) are still available at /saved.", {
         status: 503,
         headers: { "content-type": "text/plain; charset=utf-8" },
       })
@@ -132,57 +138,18 @@ async function navigate(req, path) {
   }
 }
 
-// Stale-while-revalidate (hashed /_next/static files are immutable so this is effectively cache-first).
-async function staticAsset(req) {
-  const cache = await caches.open(STATIC_CACHE);
-  const cached = (await cache.match(req)) || (await caches.match(req));
-  const refresh = fetch(req)
-    .then((res) => {
-      if (res && res.ok) cache.put(req, res.clone()).catch(() => undefined);
-      return res;
-    })
-    .catch(() => undefined);
+// Cache-first: hashed /_next/static files are immutable; icons/fonts rarely change.
+async function cacheFirst(req) {
+  const cached = await caches.match(req);
   if (cached) return cached;
-  const res = await refresh;
-  return res || Response.error();
-}
-
-// Network-first. Fresh responses are returned untouched. Cached copies are returned ONLY
-// when the network is unreachable, and are always marked offline with a timestamp.
-async function apiNetworkFirst(req) {
-  const cache = await caches.open(API_CACHE);
   try {
-    const res = await withTimeout(fetch(req), API_TIMEOUT_MS);
-    if (res.ok) {
-      const body = await res.clone().blob();
-      const headers = new Headers(res.headers);
-      headers.set("x-pricepilot-cached-at", new Date().toISOString());
-      await cache
-        .put(req, new Response(body, { status: res.status, statusText: res.statusText, headers }))
-        .catch(() => undefined);
+    const res = await fetch(req);
+    if (res && res.ok) {
+      const cache = await caches.open(STATIC_CACHE);
+      cache.put(req, res.clone()).catch(() => undefined);
     }
     return res;
   } catch (err) {
-    const cached = await cache.match(req);
-    if (cached) {
-      const body = await cached.blob();
-      const headers = new Headers(cached.headers);
-      headers.set("x-pricepilot-offline", "1");
-      if (!headers.has("x-pricepilot-cached-at")) {
-        headers.set("x-pricepilot-cached-at", "unknown");
-      }
-      return new Response(body, { status: cached.status, statusText: cached.statusText, headers });
-    }
-    return new Response(
-      JSON.stringify({ error: "offline", message: "Live data unavailable offline." }),
-      {
-        status: 503,
-        headers: {
-          "content-type": "application/json",
-          "x-pricepilot-offline": "1",
-          "cache-control": "no-store",
-        },
-      }
-    );
+    return Response.error();
   }
 }

@@ -7,6 +7,7 @@ import { extractDeterministic, extractForTarget, extractWithLlm, type ExtractRes
 import { finalizeDecision, gamingMismatch, guardMedian, guardOffers, lookupQuery, lowestVerified, makeGroup, mergeStatuses, pickVariantBucket, whyFromScore } from "./group";
 import { discoverPages, discoverSpecPages, pool } from "./pages";
 import type { Candidate, Log, ShopDeps } from "./types";
+import { meetsRequirements, requirementsEmptyMessage } from "../requirements";
 
 export * from "./types";
 export { verifyFacts, evidenceInPage, normText } from "./evidence";
@@ -85,7 +86,12 @@ export async function runDiscovery(parsed: ParsedQuery, ctx: { weights: ShopWeig
   for (const c of ex.candidates) {
     const fails = constraints.filter((k) => k.check({ specs: c.specs, price: c.price?.price ?? null }, false) === "fail");
     if (fails.length) excludedMsgs.push(`${c.name}: ${fails.map((f) => f.describe).join(", ")} not met`);
-    else passing.push(c);
+    else {
+      // stage 1 (candidates): explicitly requested brand / product type are hard requirements
+      const req = meetsRequirements(c.name, parsed);
+      if (req.ok) passing.push(c);
+      else excludedMsgs.push(`${c.name}: ${req.reason}`);
+    }
   }
   const gaming = parsed.category === "laptop" && parsed.preferredFeatures.includes("gaming");
   if (gaming) {
@@ -99,7 +105,7 @@ export async function runDiscovery(parsed: ParsedQuery, ctx: { weights: ShopWeig
 
   const weights = cfg.weightsFor(parsed);
   const pre = rankDesc(scoreAll(passing, cfg, weights, new Map(), null).filter((x) => scoreCoverage(x.score) > 0));
-  if (pre.length === 0) return { groups: [], statuses, notes, emptyReason: "No candidate met your requirements with enough evidence to rank.", candidateCount: ex.candidates.length };
+  if (pre.length === 0) return { groups: [], statuses, notes, emptyReason: requirementsEmptyMessage(parsed) ?? "No candidate met your requirements with enough evidence to rank.", candidateCount: ex.candidates.length };
   // Budget-aware shortlist ORDER (no data changes): with a budget, candidates whose editorial price is within it are
   // price-checked first, unknown-price ones next, flagship-tier names (Ultra / Pro Max / Fold / Flip) last. This spends the
   // limited Search/Fetch/Agent lookups on phones that can actually fit the budget.
@@ -139,7 +145,10 @@ export async function runDiscovery(parsed: ParsedQuery, ctx: { weights: ShopWeig
   for (const { c, r, err } of results) {
     if (!r) { statuses.push({ source: "retailers", state: "error", message: `Offer lookup failed for ${c.name}${err ? `: ${err}` : ""}` }); dropped.push(`${c.name}: offer lookup failed`); continue; }
     statuses.push(...r.statuses);
-    const g1 = guardOffers(r.offers, { category: parsed.category, editorialPrice: c.price?.price ?? null });
+    // stage 2 (offers): a verified price never makes a listing match the request
+    const reqOffers = r.offers.filter((o) => meetsRequirements(o.productName, parsed).ok);
+    if (reqOffers.length < r.offers.length) notes.push(`${c.name}: ${r.offers.length - reqOffers.length} store listing(s) dropped (wrong brand or product type).`);
+    const g1 = guardOffers(reqOffers, { category: parsed.category, editorialPrice: c.price?.price ?? null });
     const bucket = pickVariantBucket(g1.offers, { ramGb: parsed.variant.ramGb, storageGb: parsed.variant.storageGb });
     const g2 = guardMedian(bucket.offers);
     bucket.offers = g2.offers;
@@ -155,7 +164,7 @@ export async function runDiscovery(parsed: ParsedQuery, ctx: { weights: ShopWeig
   }
   if (dropped.length) notes.push(`Dropped after price check: ${dropped.slice(0, 6).join("; ")}${dropped.length > 6 ? `; +${dropped.length - 6} more` : ""}.`);
 
-  if (kept.length === 0) return { groups: [], statuses: mergeStatuses(statuses), notes, emptyReason: "No candidate had a verified store price within your requirements.", candidateCount: ex.candidates.length };
+  if (kept.length === 0) return { groups: [], statuses: mergeStatuses(statuses), notes, emptyReason: requirementsEmptyMessage(parsed) ?? "No candidate had a verified store price within your requirements.", candidateCount: ex.candidates.length };
 
   // rescore with verified prices and rank
   const priceRef = parsed.budgetMax ?? Math.max(...kept.map((k) => k.low));

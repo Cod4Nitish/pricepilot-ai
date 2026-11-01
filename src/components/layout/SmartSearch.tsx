@@ -261,7 +261,7 @@ export default function SmartSearch({
           type="submit"
           disabled={busy}
           aria-label="Search"
-          className={cn("bg-primary text-white grid shrink-0 cursor-pointer place-items-center font-semibold disabled:opacity-60", hero ? "h-12 w-12 rounded-lg sm:w-auto sm:px-6" : "h-10 w-10 rounded-xl")}
+          className={cn("bg-primary text-white grid shrink-0 cursor-pointer place-items-center font-semibold disabled:opacity-60", hero ? "h-12 w-12 rounded-lg sm:w-auto sm:px-6" : "h-11 w-11 rounded-xl")}
         >
           {busy ? (
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden />

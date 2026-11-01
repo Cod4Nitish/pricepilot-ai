@@ -1,6 +1,7 @@
 // TinyFish Search + Fetch for discovery. Bounded concurrency; failures become honest statuses.
 import { TinyFishError, fetchPages as realFetch, search as realSearch } from "@/lib/tinyfish";
 import type { Category, ParsedQuery, SourceStatus } from "../types";
+import { requestedProductType } from "../requirements";
 import { hostOf } from "./evidence";
 import type { FetchedText, Log, ShopDeps } from "./types";
 
@@ -26,7 +27,9 @@ export function mentionsBudget(text: string, budget: number | null): boolean {
 }
 
 export function buildQueries(p: ParsedQuery, year: number): string[] {
-  const cat = CAT_WORD[p.category] ?? p.category;
+  // an explicitly requested brand / product type belongs in the discovery query ("best Sony headphones under 5000")
+  const type = requestedProductType(p.raw);
+  const cat = `${p.brand ? `${p.brand} ` : ""}${type ? (type.endsWith("s") ? type : `${type}s`) : (CAT_WORD[p.category] ?? p.category)}`;
   const budget = p.budgetMax !== null ? ` under ${p.budgetMax}` : p.budgetMin !== null ? ` above ${p.budgetMin}` : "";
   const feats = p.preferredFeatures.filter((f) => !["5g"].includes(f)).slice(0, 3).join(" ");
   const specs: string[] = [];
