@@ -27,6 +27,8 @@ export interface StepSink {
 /** Injectable dependencies (all optional; real implementations are used lazily when absent). */
 export interface ShopDeps {
   buildOffers?: BuildOffersFn;
+  /** generic-category fallback: the e-commerce search pipeline (defaults to lib/search searchProducts) */
+  searchProducts?: (query: string) => Promise<import("@/lib/types").SearchResponse>;
   buildDecision?: BuildDecisionFn;
   search?: (p: { query: string; location?: string; includeDomains?: string[]; excludeDomains?: string[]; page?: number }, opts?: ClientOptions) => Promise<SearchOutput>;
   fetchPages?: (p: { urls: string[]; ttl?: number; perUrlTimeoutMs?: number }, opts?: ClientOptions) => Promise<FetchOutput>;

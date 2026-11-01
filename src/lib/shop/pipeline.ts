@@ -134,6 +134,9 @@ export async function runShop(input: ShopInput, deps: ShopDeps = {}): Promise<Sh
     let res: ShopResponse;
     if (parsed.searchIntent === "PRODUCT_COMPARISON") res = await compare(parsed, { base, pincode, weights, input, deps, log, year });
     else if (parsed.searchIntent === "PRODUCT_RECOMMENDATION" || parsed.searchIntent === "FEATURE_SEARCH") res = await recommend(parsed, { base, pincode, weights, input, deps, log, year });
+    // a broad product phrase ("remote control car", "rc car under 2000") in a category without a spec model and
+    // without a specific model name is a general search, not an exact-model lookup
+    else if (parsed.searchIntent === "EXACT_PRODUCT" && !parsed.model && !getCategoryConfig(parsed.category)) res = await generic(parsed, { base, pincode, weights, input, deps, log, year });
     else res = await exact(parsed, { base, pincode, weights, input, deps, log });
 
     res.groups = sortGroups(res.groups, sort);
@@ -216,7 +219,70 @@ async function exact(parsed: ParsedQuery, ctx: Ctx): Promise<ShopResponse> {
   return { ...ctx.base, groups: [group], statuses, recommendationProvisional: false, summary: parts.join(" "), emptyReason: null };
 }
 
+const GENERIC_STOP = /\b(best|top|good|great|cheap|cheapest|latest|new|buy|online|india|price|prices|sabse|accha|achha|sasta|wala|wali)\b/gi;
+const MAX_GENERIC_GROUPS = 8;
+
+/**
+ * Any product category without a scoring config (toys, kettles, shoes, mice, groceries...): one real retailer search
+ * (TinyFish Search -> Fetch -> selective Agent, same pipeline and caches), then each matched listing becomes its own
+ * product card. Nothing is ranked by specs (there is no spec model for the category): verified prices first.
+ */
+async function generic(parsed: ParsedQuery, ctx: Ctx): Promise<ShopResponse> {
+  const budget = parsed.budgetMax !== null ? ` under ${parsed.budgetMax}` : "";
+  const core = parsed.raw.replace(GENERIC_STOP, " ").replace(/\b(under|below|upto|up to|within|less than)\s*(?:rs\.?|₹)?\s*[\d,.]+\s*k?\b/gi, " ").replace(/\s+/g, " ").trim() || parsed.raw;
+  const q = `${core}${budget}`;
+  ctx.log(`General product search for "${q}" (no category scoring model; listings matched by title)`);
+  const searchFn = ctx.deps.searchProducts ?? (await import("@/lib/search")).searchProducts;
+  const { buildOffers } = await import("./offers");
+  let sr;
+  try {
+    sr = await searchFn(q);
+  } catch (e) {
+    ctx.log("Retailer search failed", "error");
+    return emptyRes(ctx, `Retailer search failed${e instanceof Error ? `: ${e.message.slice(0, 100)}` : ""}.`, []);
+  }
+  const statuses: SourceStatus[] = sr.statuses.map((s) => ({ source: s.retailer, state: s.state === "disabled" ? "disabled" : s.state, message: s.message, latencyMs: s.latencyMs }) as SourceStatus);
+  const listings = sr.offers.filter((o) => o.matchConfidence >= 0.5);
+  const byTitle = new Map<string, typeof listings>();
+  for (const o of listings) {
+    const k = cleanProductTitle(o.title).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 70);
+    if (!k) continue;
+    byTitle.set(k, [...(byTitle.get(k) ?? []), o]);
+  }
+  const groups: ProductGroup[] = [];
+  {
+    for (const [, ls] of byTitle) {
+      if (groups.length >= MAX_GENERIC_GROUPS) break;
+      // re-uses the already fetched listing: no extra TinyFish calls
+      const r = await buildOffers(ls[0].title, { pincode: ctx.pincode, cards: ctx.input.cards, parsed: { budgetMax: parsed.budgetMax } }, { search: async () => ({ ...sr!, offers: ls, excluded: [] }) }).catch(() => null);
+      if (!r || r.offers.length === 0) continue;
+      const buildDecision = await resolveBuildDecision(ctx.deps);
+      const name = bestName(r.offers, cleanProductTitle(ls[0].title));
+      const g = makeGroup({ id: slug(name), name, brand: r.offers[0].brand ?? null, model: null, variant: parsed.variant, offers: r.offers, decision: finalizeDecision(r.offers, ctx.weights, buildDecision) });
+      g.provisional = !g.lowestVerified;
+      // a verified price above the budget is not an in-budget match (summary says "within budget")
+      if (parsed.budgetMax !== null && g.lowestVerified && g.lowestVerified.price > parsed.budgetMax) continue;
+      groups.push(g);
+    }
+  }
+  groups.sort((a, b) => Number(!!b.lowestVerified) - Number(!!a.lowestVerified) || (a.lowestVerified?.price ?? Infinity) - (b.lowestVerified?.price ?? Infinity));
+  groups.forEach((g, i) => (g.rank = i + 1));
+  const verified = groups.filter((g) => g.lowestVerified).length;
+  ctx.log(`General search: ${groups.length} product(s), ${verified} with a verified price`, groups.length ? "ok" : "warn");
+  if (!groups.length) {
+    return emptyRes(ctx, `No matching listings with readable details were found for "${core}" at the stores we check. Try a more specific product name or brand.`, statuses);
+  }
+  const summary = [
+    `${groups.length} matching product(s) for "${core}"${parsed.budgetMax !== null ? ` within ${inr(parsed.budgetMax)}` : ""}; ${verified} with a verified store price.`,
+    "General product search: listings are matched by their title and shown cheapest verified first, not ranked by specifications.",
+  ];
+  if (verified < groups.length) summary.push(`${groups.length - verified} listing(s) could not be price-verified and are shown as unverified leads.`);
+  return { ...ctx.base, groups, statuses, recommendationProvisional: true, summary: summary.join(" "), emptyReason: null };
+}
+
 async function recommend(parsed: ParsedQuery, ctx: Ctx): Promise<ShopResponse> {
+  // categories without a scoring model still get a real search (never an instant "not supported")
+  if (!getCategoryConfig(parsed.category)) return generic(parsed, ctx);
   const d = await runDiscovery(parsed, { weights: ctx.weights, pincode: ctx.pincode, cards: ctx.input.cards, deps: ctx.deps, log: ctx.log, year: ctx.year ?? new Date().getFullYear() });
   if (d.groups.length === 0) {
     const r = emptyRes(ctx, d.emptyReason ?? "No relevant verified results found.", d.statuses);

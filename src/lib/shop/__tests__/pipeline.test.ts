@@ -4,6 +4,17 @@ import { verifyFacts, evidenceInPage } from "../discovery/evidence";
 import { extractWithLlm } from "../discovery/extract";
 import { smartphoneConfig, laptopConfig } from "../categories";
 import type { Decision, ShopOffer, SpecFact } from "../types";
+import type { Offer, SearchResponse } from "../../types";
+
+const gRaw = (o: Partial<Offer> & { title: string; url: string; price: number | null }): Offer => ({
+  id: o.url, retailer: "amazon", retailerName: "Amazon.in", mrp: null, discountPct: null, deliveryCharge: null,
+  availability: "in_stock", offers: [], spec: {}, matchConfidence: 0.9, matchNotes: [], verification: "verified",
+  checkedAt: "2026-11-01T00:00:00Z", ...o,
+});
+const gSearch = (q: string, offers: Offer[]): SearchResponse => ({
+  query: q, parsed: { rawQuery: q }, offers, excluded: [], statuses: [], bestVerified: null,
+  recommendation: { text: "", enoughEvidence: true, caveats: [] }, runId: "r", generatedAt: "", cached: false,
+});
 
 const URL1 = "https://www.gsmarena.com/best-phones.php";
 const PAGE = `# Best phones under 40000 in India
@@ -268,11 +279,59 @@ describe("runShop: recommendation", () => {
     expect(r.groups.map((g) => g.rank)).toEqual([1, 2]);
   });
 
-  it("unsupported category does not guess", async () => {
-    const { deps } = mkDeps();
+  it("unsupported category (no scoring model): generic search, only mocked listings, no fabrication", async () => {
+    const calls: string[] = [];
+    const listings = [
+      gRaw({ title: "Philips AC1215 Air Purifier", url: "https://www.amazon.in/p/dp/B0PHIL0001", price: 9999 }),
+      gRaw({ title: "Dyson Purifier Cool TP07", url: "https://www.flipkart.com/d/p/itm0000dyson", price: 45900, retailer: "flipkart", retailerName: "Flipkart" }),
+      gRaw({ title: "Coway AirMega 150 Purifier", url: "https://www.amazon.in/c/dp/B0COWAY001", price: null, verification: "unverified" }),
+      gRaw({ title: "Totally Unrelated Thing", url: "https://www.amazon.in/x/dp/B0LOWCONF1", price: 100, matchConfidence: 0.2 }),
+    ];
+    const { deps } = mkDeps({ searchProducts: async (q) => { calls.push(q); return gSearch(q, listings); } });
+    const r = await runShop({ query: "best air purifier under 15000" }, deps);
+    expect(calls).toHaveLength(1); // one search, no extra calls
+    const urls = r.groups.flatMap((g) => g.offers.map((o) => o.sourceUrl));
+    const mocked = new Set(listings.map((l) => l.url));
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) expect(mocked.has(u)).toBe(true); // nothing invented
+    expect(urls).not.toContain("https://www.amazon.in/x/dp/B0LOWCONF1"); // low-confidence dropped
+    const philips = r.groups.find((g) => /philips/i.test(g.name));
+    expect(philips?.lowestVerified).toEqual({ price: 9999, retailer: "amazon" });
+    expect(philips?.provisional).toBe(false);
+    expect(r.groups[0]).toBe(philips); // verified, in budget first
+    // above budget must never surface as a verified in-budget price
+    for (const g of r.groups) if (g.lowestVerified) expect(g.lowestVerified.price).toBeLessThanOrEqual(15000);
+    expect(r.groups.find((g) => /dyson/i.test(g.name))).toBeUndefined(); // regression: over-budget verified listing was shown
+    const coway = r.groups.find((g) => /coway/i.test(g.name));
+    if (coway) {
+      expect(coway.lowestVerified).toBeNull();
+      expect(coway.provisional).toBe(true);
+      expect(coway.offers.every((o) => o.listedPrice === null)).toBe(true);
+    }
+    expect(r.recommendationProvisional).toBe(true);
+    expect(r.emptyReason).toBeNull();
+  });
+
+  it("unsupported category with no listings => groups [] and an honest emptyReason", async () => {
+    const { deps } = mkDeps({ searchProducts: async (q) => gSearch(q, []) });
     const r = await runShop({ query: "best air purifier under 15000" }, deps);
     expect(r.groups).toEqual([]);
-    expect(r.emptyReason).toMatch(/not supported yet/);
+    expect(r.emptyReason).toMatch(/No matching listings/);
+  });
+
+  it("generic search de-duplicates listings of the same product by title", async () => {
+    const listings = [
+      gRaw({ title: "Mirana Rock Crawler Air Purifier 1:16", url: "https://www.amazon.in/m/dp/B0MIRANA01", price: 1499 }),
+      gRaw({ title: "Mirana Rock Crawler Air Purifier 1:16", url: "https://www.flipkart.com/m/p/itm00mirana", price: 1399, retailer: "flipkart", retailerName: "Flipkart" }),
+      gRaw({ title: "Honeywell Air Touch V1 Air Purifier", url: "https://www.amazon.in/s/dp/B0STORIO01", price: 899 }),
+    ];
+    const { deps } = mkDeps({ searchProducts: async (q) => gSearch(q, listings) });
+    // NOTE: "best remote control car under 2000" currently parses as EXACT_PRODUCT, so a routable query is used here.
+    const r = await runShop({ query: "best air purifier under 2000" }, deps);
+    expect(r.groups).toHaveLength(2);
+    const mirana = r.groups.find((g) => /mirana/i.test(g.name));
+    expect(mirana?.lowestVerified).toEqual({ price: 1399, retailer: "flipkart" });
+    expect(new Set(r.groups.map((g) => g.id)).size).toBe(2);
   });
 });
 

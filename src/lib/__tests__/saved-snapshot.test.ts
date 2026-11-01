@@ -122,8 +122,12 @@ describe("refresh", () => {
   });
 
   it("updates only when the same identity is returned, and appends a new observation", () => {
-    const newer = withOffers(base, (o, i) => (i === 0 ? { listedPrice: 43999, observedAt: "2026-11-01T11:00:00.000Z" } : {}));
-    const out = applyRefresh(saved, res([newer]), new Date("2026-11-01T11:00:00.000Z"));
+    // Mock fixture observedAt values are relative to the real wall clock, so the refreshed observation
+    // must be strictly later than every fixture observation (a fixed date sorts wrongly once real time passes it).
+    const latest = Math.max(...base.offers.map((o) => new Date(o.observedAt).getTime()));
+    const refreshedAt = new Date(latest + 60_000);
+    const newer = withOffers(base, (o, i) => (i === 0 ? { listedPrice: 43999, observedAt: refreshedAt.toISOString() } : {}));
+    const out = applyRefresh(saved, res([newer]), refreshedAt);
     expect(out.kind).toBe("updated");
     if (out.kind !== "updated") return;
     expect(out.added).toBe(1);
