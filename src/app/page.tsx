@@ -1,5 +1,6 @@
 import Link from "next/link";
 import HeroSearch from "@/components/layout/HeroSearch";
+import CategoryGrid from "@/components/home/CategoryGrid";
 
 const STEPS = [
   { title: "Search", text: "Type a product name, speak it, or paste a product link." },
@@ -18,10 +19,12 @@ const RETAILERS = ["Amazon India", "Flipkart", "Croma", "Reliance Digital", "Vij
 
 export default function HomePage() {
   return (
-    <div className="mx-auto max-w-[1100px] space-y-14 sm:space-y-16">
+    <div className="mx-auto max-w-[1100px] space-y-12 sm:space-y-14">
       <section aria-label="Search" className="pt-2 sm:pt-8">
         <HeroSearch />
       </section>
+
+      <CategoryGrid />
 
       <section aria-labelledby="how">
         <h2 id="how" className="mb-4 text-h2 font-semibold">How it works</h2>
