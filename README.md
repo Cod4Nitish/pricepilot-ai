@@ -97,6 +97,51 @@ flowchart LR
 
 Without server configuration the API returns `503 NOT_CONFIGURED`. It never falls back to sample data.
 
+## Spend less, decide better: purchase cost AND research cost
+
+PricePilot optimizes both what the shopper pays and what the AI web research costs to run.
+
+### TrueCost (`src/lib/engine/ecommerce/truecost.ts`)
+
+`payable = listed price + verified fees - confirmed discounts`, with four honest states:
+
+| State | Meaning |
+|---|---|
+| `CONFIRMED` | every required charge is known: this is the payable total |
+| `LOWER_BOUND` | e.g. shipping not shown: the total is a **minimum**, never treated as ₹0 shipping |
+| `CONDITIONAL` | total known, plus card/coupon offers that need an eligibility check at checkout (never deducted, never stacked) |
+| `UNKNOWN` | listed price not verified |
+
+"Cheapest Confirmed" is awarded only to a verified, exact-variant, in-stock offer with a fully known total. Otherwise the UI shows "Lowest Listed Price" and "Lowest Known Minimum" separately and says there is no confirmed winner.
+
+### Deal Decision Receipt (`src/lib/receipts/build.ts`)
+
+Built only from the completed comparison (no extra TinyFish calls): product, variant, per-retailer price + verification time + source link, TrueCost status, verdict and reason, evidence quality, limitations, research cost. Copy, download JSON, or native share. Nothing is stored server-side.
+
+### Cost-aware adaptive agent routing (`src/lib/search.ts`, `src/lib/tinyfish.ts`, `src/lib/cost/*`)
+
+`Cache → TinyFish Search → TinyFish Fetch → paid TinyFish Agent only when justified.`
+
+- The Agent runs only for a page whose price Fetch could not read, whose title strongly matches the query, at a relevant retailer that has no verified price yet.
+- It **stops early** once 2 retailers have verified, in-budget prices, and says so in the result ("a lower price elsewhere is possible").
+- Identical concurrent searches share one in-flight pipeline. Cache keys are normalized but keep every variant token.
+- Caches are separate: product discovery (6 h), agent price observations (15 min, shown with their original time and labelled "cached"), product identity (24 h).
+- "Re-check prices now" forces a live check (TinyFish Fetch `ttl: 0`).
+- Budgets are set by env: `PP_AGENT_MAX_PER_SEARCH` (2), `PP_AGENT_MAX_CONCURRENT` (2), `PP_AGENT_DAILY_MAX_RUNS` (100), `PP_AGENT_DAILY_BUDGET_USD` (2), `PP_AGENT_MAX_DURATION_S` (75), `PP_TARGET_VERIFIED_RETAILERS` (2), `PP_PRICE_TTL_S` (900), `PP_USD_PER_AGENT_STEP` (0.016), `PP_COST_ALERT_USD` (1), and `PP_ROUTING=legacy` for A/B testing. Timeouts bound run time, not money: the daily budget is checked before each run, so one run can overshoot it by its own steps.
+
+**Telemetry.** Every response carries `usage`, which shows the real counts: Search requests, fetched URLs, paid agent runs, the provider-metered `num_of_steps`, cache hits, latency and verified retailers. `GET /api/cost` gives aggregate counters for the server instance; there are no queries, IPs or keys in it. Cost is **calculated** as steps × $0.016 (TinyFish wallet rate card, 2026-11-01; Search and Fetch are $0). It is not a billing record; the actual bill is in the TinyFish dashboard.
+
+### Measured A/B, same 3 queries, real TinyFish (localhost, 2026-11-01)
+
+| Routing | Paid agent runs | Agent steps | Calculated cost | Time per query | Verified retailers (S24 / phone<50k / laptop<70k) |
+|---|---|---|---|---|---|
+| legacy (before) | 6 | 43 | $0.688 | 110 to 177 s | flipkart / none / amazon + vijay* |
+| adaptive (after) | 0 | 0 | $0.00 | 11 to 21 s | amazon + flipkart / none / amazon + vijay* |
+
+\* In both runs the laptop "verified" prices were wrong (₹3,199 = a free-gift value, ₹25,000 = return-policy text). This was found during the A/B and fixed afterwards: retailers whose fetched page has no price now trust only structured prices. The same query re-run after the fix: 2 paid agent runs, 12 steps, $0.192 calculated, and **no verified laptop within ₹70,000**, which is reported honestly. One run per query; retailer search results vary between runs, so treat these as a single sample, not a benchmark average.
+
+Also found and fixed during the sprint: TinyFish began rejecting `description` keys in Agent `output_schema` (HTTP 400). That had silently disabled every Agent fallback; schemas are now sanitized.
+
 ## Supported retailers
 
 | Retailer | Discovery | Price extraction |
@@ -185,6 +230,10 @@ See [SECURITY.md](SECURITY.md).
 - Delivery cost appears only when found; otherwise basket totals are marked unknown.
 - Bank/card offers are shown as page text with unverified conditions, never as guaranteed discounts.
 - Price history starts when tracking starts; nothing is backfilled.
+- Retailer pages rarely show shipping, so most totals are `LOWER_BOUND` (minimums), not confirmed totals.
+- Croma / Reliance / Vijay Sales prices need the paid Agent and often still cannot be read.
+- Cost telemetry is in memory per server instance (resets on cold start); Supabase is not connected yet.
+- Budget Rescue (alternatives when nothing fits the budget) is **not implemented**.
 - Not affiliated with any retailer.
 
 ## Roadmap
