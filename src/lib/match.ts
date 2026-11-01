@@ -188,3 +188,24 @@ export function scoreListing(q: ParsedQuery, title: string): MatchResult {
   if (notes.length === 0) notes.push("Title matches query terms.");
   return { confidence: Math.max(0, Math.min(1, Math.round(score * 100) / 100)), notes, hardExcluded: false, spec };
 }
+
+const JUNK_TITLE_RE = /^(?:add to (?:your )?(?:order|cart|basket|list|wish ?list)|sponsored|customers? (?:also )?(?:viewed|bought)|frequently bought together|related (?:products|items)|similar (?:products|items)|you may also like|recommended for you|continue shopping|your recently viewed|sign in|log ?in|see all|view all|shop now|buy now|view (?:details|more)|compare|back to top|skip to .*|save for later|go to cart|proceed to checkout)\.?$/i;
+
+/** Non-product widgets/links returned by search (e.g. Amazon "Add to your order"). Drop BEFORE matching; never report as an exclusion. */
+/** Accessories that share a device's name (cases, protectors, chargers...). Never a valid offer for the device. */
+const ACCESSORY_RE = /(back\s*cover|flip\s*cover|case|cover|tempered|screen\s*(?:guard|protector)|protector|glass\s*guard|camera\s*lens|lens\s*protector|charger|adapter|cable|skin|sticker|stand|holder|pouch|sleeve|strap|bumper|film|stylus|cleaning\s*kit|backpack|bag|replacement|battery\s*for|spare)/i;
+const DEVICE_RE = /(phone|smartphone|mobile|laptop|notebook|galaxy|iphone|pixel|oneplus|redmi|poco|realme|oppo|vivo|xiaomi|rtx|gaming)/i;
+export function isAccessoryTitle(title: string | null | undefined): boolean {
+  const t = (title ?? "").replace(/\s+/g, " ").trim();
+  // A "5G ... 128GB ... (8GB RAM)" device listing is not an accessory even if it mentions "case" (e.g. "with cover" bundles are rare).
+  return ACCESSORY_RE.test(t) && !/\d+\s?GB\s*(?:RAM|Storage)/i.test(t) && (DEVICE_RE.test(t) || t.length < 90);
+}
+
+export function isJunkTitle(title: string | null | undefined): boolean {
+  const t = (title ?? "").replace(/\s+/g, " ").trim();
+  if (t.length < 4) return true;
+  if (JUNK_TITLE_RE.test(t)) return true;
+  if (isAccessoryTitle(t)) return true;
+  // pure punctuation / no letters at all
+  return !/[a-z]{3}/i.test(t);
+}

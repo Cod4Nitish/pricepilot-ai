@@ -3,6 +3,7 @@ import type { UnifiedOffer } from "../schema";
 import { pickCheapest, pickFastest, scoreCandidates, type RankCand, type Weights } from "../rank";
 import type { ExcludedOffer, Pick, Reason, Recommendation } from "../types";
 import { priceOffer, type PaymentOptions, type PricedOffer } from "./discounts";
+import { cleanOffers } from "./dedupe";
 import { parseEcomQuery, type EcomQuery } from "./entity";
 import { resolveCandidates, type Resolution } from "./resolve";
 
@@ -41,9 +42,10 @@ function toPick(e: EcomEntry): Pick {
 
 export function compareEcommerce(
   queryText: string,
-  offers: UnifiedOffer[],
+  offersIn: UnifiedOffer[],
   opts: PaymentOptions & { budget?: number | null; weights?: Partial<Weights> | null } = {},
 ): EcomComparison {
+  const offers = cleanOffers(offersIn);
   const query = parseEcomQuery(queryText);
   const budget = opts.budget ?? query.budget;
   const res = resolveCandidates(query.entity, queryText, offers.map((o) => ({ id: o.sourceUrl, title: o.productName, gtins: o.gtin ? [o.gtin] : [] })));

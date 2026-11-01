@@ -3,8 +3,8 @@ import { z } from "zod";
 import { requireEnv } from "./env";
 import { TtlCache } from "./cache";
 import { discountPct, extractFromMarkdown, parseInr } from "./extract";
-import { parseMaxPrice, parseQuery, scoreListing, type ParsedQuery } from "./match";
-import { RETAILERS, RETAILER_BY_ID, isProductUrl, type RetailerConfig } from "./retailers";
+import { isJunkTitle, parseMaxPrice, parseQuery, scoreListing, specFromTitle, type ParsedQuery } from "./match";
+import { RETAILERS, RETAILER_BY_ID, discoverProductLinks, isProductUrl, productKey, type RetailerConfig } from "./retailers";
 import { RunTracker } from "./runs";
 import { canonicalUrl, looksLikeUrl, validateRetailerUrl } from "./ssrf";
 import * as tf from "./tinyfish";
@@ -29,19 +29,27 @@ export function offerId(retailer: RetailerId, url: string): string {
   return createHash("sha1").update(`${retailer}|${canonicalUrl(url)}`).digest("hex").slice(0, 20);
 }
 
-const AGENT_SCHEMA = {
+export const AGENT_SCHEMA = {
   type: "object",
   properties: {
-    title: { type: "string" },
-    price: { type: "number", description: "Current selling price in INR, digits only" },
-    mrp: { type: "number", description: "Struck-through MRP in INR if shown, else null" },
-    availability: { type: "string", description: "in_stock or out_of_stock" },
-    offers: { type: "array", items: { type: "string" }, description: "Bank/cashback/EMI offer text, verbatim" },
+    title: { type: "string", description: "Product title exactly as displayed" },
+    price: { type: "number", description: "Current selling price in INR next to the main Buy/Add to cart button, digits only; null if not displayed" },
+    mrp: { type: "number", description: "Struck-through M.R.P./list price in INR if displayed, else null" },
+    availability: { type: "string", description: "in_stock, out_of_stock or unknown, as shown by the buy box" },
+    deliveryText: { type: "string", description: "Delivery date/charge line exactly as displayed, else null" },
+    seller: { type: "string", description: "Seller / sold-by name if displayed, else null" },
+    offers: { type: "array", items: { type: "string" }, description: "Bank/cashback/EMI offer lines, verbatim, max 5" },
   },
   required: ["price"],
 };
-const AGENT_GOAL =
-  "Read this retailer product page without logging in. Return the current selling price in INR (digits only), the MRP if shown, availability (in_stock or out_of_stock), the product title, and up to 5 offer lines verbatim. If a CAPTCHA, login wall or bot check appears, stop and return price null. Do not solve CAPTCHAs.";
+export const AGENT_GOAL =
+  "Open this retailer product page without logging in and read ONLY what is displayed; never guess or infer. " +
+  "If a location, cookie, app-install or newsletter popup covers the page, close it. " +
+  "Return: title (as displayed); price = the current selling price shown next to the main Buy / Add to cart button, in INR, digits only (NOT an EMI per-month amount, exchange price, or bank-offer price); " +
+  "mrp = the struck-through M.R.P. / list price if displayed, else null; availability = in_stock, out_of_stock or unknown according to the buy box; " +
+  "deliveryText = the delivery date or delivery charge line exactly as displayed, else null; seller = the seller name if displayed, else null; " +
+  "offers = up to 5 bank/cashback/EMI offer lines verbatim. " +
+  "If a CAPTCHA, login wall or bot check appears, stop and return price null. Do not solve CAPTCHAs. Never add to cart, never start checkout.";
 
 const num = z.union([z.number(), z.string()]).nullish().transform((v) => {
   if (v === null || v === undefined) return null;
@@ -54,7 +62,33 @@ const agentResultSchema = z.object({
   mrp: num,
   availability: z.string().nullish(),
   offers: z.array(z.string()).nullish(),
+  deliveryText: z.string().nullish(),
+  seller: z.string().nullish(),
 });
+
+/** Tolerant unwrap of TinyFish agent output: {result:{...}}, JSON strings, price objects. */
+export function unwrapAgentResult(raw: unknown): unknown {
+  let r = raw;
+  for (let i = 0; i < 3; i++) {
+    if (typeof r === "string") {
+      try {
+        r = JSON.parse(r);
+      } catch {
+        return null;
+      }
+    } else if (r && typeof r === "object" && !("price" in r) && "result" in r) r = (r as { result: unknown }).result;
+    else break;
+  }
+  if (r && typeof r === "object") {
+    const o = { ...(r as Record<string, unknown>) };
+    for (const k of ["price", "mrp"]) {
+      const v = o[k];
+      if (v && typeof v === "object" && "value" in v) o[k] = (v as { value: unknown }).value;
+    }
+    return o;
+  }
+  return r;
+}
 
 interface Candidate {
   retailer: RetailerConfig;
@@ -72,6 +106,49 @@ interface PipelineCtx {
 }
 
 type FetchIssue = "bot_blocked" | "login_required" | "other";
+
+type OfferExtra = Partial<Pick<Offer, "seller" | "warranty" | "returnPolicy" | "gtin" | "sku" | "rating" | "deliveryText">>;
+
+/**
+ * A page h1/title is sometimes shorter than the search-result title (e.g. "Samsung Galaxy S24 5G" vs
+ * "... (256 GB, 8 GB RAM)"). Keep the page title unless the search title adds storage/RAM without contradicting it.
+ */
+export function richerTitle(pageTitle: string, searchTitle: string): string {
+  if (!searchTitle || isJunkTitle(searchTitle)) return pageTitle;
+  const p = specFromTitle(pageTitle);
+  const st = specFromTitle(searchTitle);
+  const lacks = (p.storageGb === undefined && st.storageGb !== undefined) || (p.ramGb === undefined && st.ramGb !== undefined);
+  const contradicts = (p.storageGb !== undefined && st.storageGb !== undefined && p.storageGb !== st.storageGb) || p.condition !== st.condition;
+  if (lacks && !contradicts) {
+    const nums = pageTitle.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && /\d/.test(w));
+    const sl = searchTitle.toLowerCase();
+    if (nums.every((w) => sl.includes(w))) return searchTitle;
+  }
+  return pageTitle;
+}
+
+/** Agent budget: one run per retailer first (retailers whose Fetch has no price go first), then by prescore. */
+function pickAgentWork<T extends { c: Candidate }>(need: T[], budget: { left: number; creditsExhausted: boolean }): T[] {
+  const by = new Map<string, T[]>();
+  for (const w of [...need].sort((a, b) => b.c.prescore - a.c.prescore)) {
+    const l = by.get(w.c.retailer.id) ?? [];
+    l.push(w);
+    by.set(w.c.retailer.id, l);
+  }
+  const order = [...by.values()].sort((a, b) => Number(a[0].c.retailer.fetchHasPrice) - Number(b[0].c.retailer.fetchHasPrice) || b[0].c.prescore - a[0].c.prescore);
+  const out: T[] = [];
+  for (let round = 0; ; round++) {
+    let any = false;
+    for (const l of order) {
+      if (round >= l.length) continue;
+      any = true;
+      if (budget.left <= 0 || budget.creditsExhausted) return out;
+      budget.left--;
+      out.push(l[round]);
+    }
+    if (!any) return out;
+  }
+}
 
 function cleanSearchQuery(q: string): string {
   return parseMaxPrice(q).cleaned.replace(/\s+/g, " ").trim();
@@ -127,10 +204,21 @@ async function runPipeline(
     }
     const seen = new Set<string>();
     const scored: Candidate[] = [];
+    const categoryUrls: string[] = [];
+    let junk = 0;
     for (const res of s.results) {
       const v = validateRetailerUrl(res.url);
-      if (!v.ok || v.retailer.id !== s.r.id || !isProductUrl(s.r, v.url)) continue;
-      const key = canonicalUrl(v.url);
+      if (!v.ok || v.retailer.id !== s.r.id) continue;
+      if (!isProductUrl(s.r, v.url)) {
+        if (categoryUrls.length < 2) categoryUrls.push(v.url);
+        continue;
+      }
+      // Non-product widgets ("Add to your order", "Sponsored"...) are junk: dropped before matching, not reported as exclusions.
+      if (isJunkTitle(res.title)) {
+        junk++;
+        continue;
+      }
+      const key = productKey(s.r.id, v.url) ?? canonicalUrl(v.url);
       if (seen.has(key)) continue;
       seen.add(key);
       const m = scoreListing(parsed, res.title);
@@ -142,6 +230,32 @@ async function runPipeline(
       }
       scored.push({ retailer: s.r, url: v.url, searchTitle: res.title, snippet: res.snippet, prescore: m.confidence });
     }
+    if (junk) tracker.step(`${s.r.name}: ignored ${junk} non-product widget row(s)`);
+
+    // product-page discovery from category/listing pages when search found no product page
+    if (scored.length === 0 && categoryUrls.length) {
+      try {
+        const out = await deps.fetchPages({ urls: categoryUrls.slice(0, 1), ttl: 3600, links: true });
+        const pg = out.results[0];
+        if (pg) {
+          const links = discoverProductLinks(s.r, searchQuery, { links: pg.links, markdown: pg.text }, CANDIDATES_PER_RETAILER);
+          for (const l of links) {
+            const lv = validateRetailerUrl(l.url);
+            if (!lv.ok || lv.retailer.id !== s.r.id) continue;
+            const key = productKey(s.r.id, lv.url) ?? canonicalUrl(lv.url);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const m = scoreListing(parsed, l.text);
+            if (m.hardExcluded) continue;
+            scored.push({ retailer: s.r, url: lv.url, searchTitle: l.text, snippet: "", prescore: Math.min(m.confidence, 0.6) });
+          }
+          tracker.step(`${s.r.name}: discovered ${scored.length} product link(s) from a category page`);
+        }
+      } catch (e) {
+        tracker.step(`${s.r.name}: category discovery failed (${(e as Error).message})`, "warn");
+      }
+    }
+
     scored.sort((a, b) => b.prescore - a.prescore);
     candidates.push(...scored.slice(0, CANDIDATES_PER_RETAILER));
     if (scored.length === 0) {
@@ -195,18 +309,27 @@ async function runPipeline(
     offers: string[];
     imageUrl?: string;
     evidence?: string;
+    extra: OfferExtra;
     verification: Offer["verification"];
     fetched: boolean;
   }
   const work: Work[] = candidates.map((c) => {
     const page = pages.get(c.url);
     if (!page?.text) {
-      return { c, title: c.searchTitle, price: null, mrp: null, availability: "unknown", offers: [], verification: "unverified", fetched: false };
+      return { c, title: c.searchTitle, price: null, mrp: null, availability: "unknown", offers: [], extra: {}, verification: "unverified", fetched: false };
     }
     const ex = extractFromMarkdown(page.text, { title: page.title, imageLinks: page.image_links });
     return {
       c,
-      title: ex.title ?? page.title ?? c.searchTitle,
+      title: richerTitle(ex.title ?? page.title ?? c.searchTitle, c.searchTitle),
+      extra: {
+        ...(ex.seller ? { seller: ex.seller } : {}),
+        ...(ex.warranty ? { warranty: ex.warranty } : {}),
+        ...(ex.returnPolicy ? { returnPolicy: ex.returnPolicy } : {}),
+        ...(ex.gtin ? { gtin: ex.gtin } : {}),
+        ...(ex.sku ? { sku: ex.sku } : {}),
+        ...(ex.rating ? { rating: ex.rating } : {}),
+      },
       price: ex.price,
       mrp: ex.mrp,
       availability: ex.availability,
@@ -219,15 +342,9 @@ async function runPipeline(
   });
 
   // 4. agent fallback (bounded), only for fetched-or-unfetched pages that are not bot blocked / login walls
-  const needAgent = work
-    .filter((w) => w.price === null && issues.get(w.c.url) !== "bot_blocked" && issues.get(w.c.url) !== "login_required")
-    .sort((a, b) => b.c.prescore - a.c.prescore);
-  const toRun: Work[] = [];
-  for (const w of needAgent) {
-    if (ctx.agentBudget.left <= 0 || ctx.agentBudget.creditsExhausted) break;
-    ctx.agentBudget.left--;
-    toRun.push(w);
-  }
+  //    One run per retailer first (retailers whose Fetch never shows a price go first) so one retailer cannot starve the others.
+  const needAgent = work.filter((w) => w.price === null && issues.get(w.c.url) !== "bot_blocked" && issues.get(w.c.url) !== "login_required");
+  const toRun = pickAgentWork(needAgent, ctx.agentBudget);
   if (needAgent.length > toRun.length) {
     ctx.caveats.push(`Price not read for ${needAgent.length - toRun.length} listing(s): the per-search browser-agent limit (${MAX_AGENT_RUNS}) was reached to protect cost.`);
   }
@@ -235,21 +352,21 @@ async function runPipeline(
     toRun.map(async (w) => {
       try {
         tracker.step(`${w.c.retailer.name}: using browser agent for price`);
-        const r = await deps.runAgent({ url: w.c.url, goal: AGENT_GOAL, outputSchema: AGENT_SCHEMA, maxDurationSeconds: 90, overallTimeoutMs: 110_000 });
+        const r = await deps.runAgent({ url: w.c.url, goal: AGENT_GOAL, outputSchema: AGENT_SCHEMA, stealth: !w.c.retailer.fetchHasPrice, maxDurationSeconds: 90, overallTimeoutMs: 110_000 });
         if (r.status !== "COMPLETED") {
           tracker.step(`${w.c.retailer.name}: agent ${r.status.toLowerCase()}${r.error ? ` (${r.error})` : ""}`, "warn");
           return;
         }
-        let raw = r.result as unknown;
-        if (raw && typeof raw === "object" && "result" in raw && typeof (raw as { result: unknown }).result === "object") raw = (raw as { result: unknown }).result;
-        const p = agentResultSchema.safeParse(raw);
+        const p = agentResultSchema.safeParse(unwrapAgentResult(r.result));
         if (!p.success || p.data.price === null) {
           tracker.step(`${w.c.retailer.name}: agent could not read a price`, "warn");
           return;
         }
         w.price = p.data.price;
         w.mrp = p.data.mrp !== null && p.data.mrp > p.data.price ? p.data.mrp : null;
-        if (p.data.title) w.title = p.data.title;
+        if (p.data.title) w.title = richerTitle(p.data.title, w.title);
+        if (p.data.seller) w.extra.seller = p.data.seller;
+        if (p.data.deliveryText) w.extra.deliveryText = p.data.deliveryText;
         if (p.data.offers?.length) w.offers = p.data.offers.slice(0, 8);
         const av = (p.data.availability ?? "").toLowerCase();
         w.availability = /out/.test(av) ? "out_of_stock" : /in[_ ]?stock|available/.test(av) ? "in_stock" : w.availability;
@@ -265,8 +382,15 @@ async function runPipeline(
     }),
   );
 
-  // 5. build offers
-  for (const w of work) {
+  // 5. build offers (dedupe: same product key, or same retailer + title + price; verified rows win)
+  const seenOffer = new Set<string>();
+  const isVer = (w: Work) => (w.verification === "verified" || w.verification === "agent_verified" ? 1 : 0);
+  for (const w of [...work].sort((a, b) => isVer(b) - isVer(a))) {
+    const k1 = productKey(w.c.retailer.id, w.c.url) ?? canonicalUrl(w.c.url);
+    const k2 = w.price !== null ? `${w.c.retailer.id}|${w.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}|${w.price}` : null;
+    if (seenOffer.has(k1) || (k2 && seenOffer.has(k2))) continue;
+    seenOffer.add(k1);
+    if (k2) seenOffer.add(k2);
     const m = scoreListing(parsed, w.title);
     const notes = [...m.notes];
     let conf = m.confidence;
@@ -276,7 +400,7 @@ async function runPipeline(
     }
     if (w.price === null) notes.push("Price could not be confirmed from the page.");
     offers.push(
-      makeOffer(w.c.retailer, w.c.url, w.title, w.price, w.mrp, w.availability, w.offers, m.spec, m.hardExcluded ? 0 : conf, notes, w.verification, now(), w.imageUrl, w.evidence),
+      makeOffer(w.c.retailer, w.c.url, w.title, w.price, w.mrp, w.availability, w.offers, m.spec, m.hardExcluded ? 0 : conf, notes, w.verification, now(), w.imageUrl, w.evidence, w.extra),
     );
   }
 
@@ -327,8 +451,10 @@ function makeOffer(
   checkedAt: string,
   imageUrl?: string,
   evidence?: string,
+  extra: OfferExtra = {},
 ): Offer {
   return {
+    ...extra,
     id: offerId(r.id, url),
     retailer: r.id,
     retailerName: r.name,

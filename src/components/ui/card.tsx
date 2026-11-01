@@ -10,7 +10,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-line p-4 shadow-card sm:p-5",
+        "rounded-[1.1rem] border border-line-strong/40 p-4 shadow-card sm:p-5",
         level === 1 && "bg-surface",
         level === 2 && "bg-surface2",
         level === 3 && "bg-surface3",

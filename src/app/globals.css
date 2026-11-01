@@ -13,30 +13,39 @@
    White text on button gradient #3560e8 -> #7142e8 = 5.26 / 5.76
    ========================================================================== */
 
+/* Theme matches the author's portfolio: warm canvas, dark ink, brand blue, pastel accents, pill buttons. */
 :root {
-  /* Elevation surfaces (0 = page, 3 = raised/hover) */
-  --surface-0: #f6f7f9;
+  /* Elevation surfaces (0 = page canvas, 3 = raised/hover) */
+  --surface-0: #fbfbf8;
   --surface-1: #ffffff;
-  --surface-2: #f0f2f5;
-  --surface-3: #e6e9ee;
-  --border: #e2e5ea;
-  --border-strong: #c9ced6;
-  --fg: #14181f;
-  --muted: #566070;
+  --surface-2: #f4f4ee;
+  --surface-3: #ebebe3;
+  --border: rgb(30 32 37 / 0.2);
+  --border-strong: rgb(30 32 37 / 0.75);
+  --fg: #202124;
+  --muted: #5a5d63;
 
-  --primary: #1d4ed8;
-  --accent: #1d4ed8;
-  --good: #15803d; /* verified */
-  --warn: #92400e; /* caution */
+  --primary: #405dea; /* brand */
+  --accent: #354fcb; /* brand deep */
+  --good: #0f7a55; /* verified (ink on mint) */
+  --warn: #7a4b00; /* caution (ink on sun) */
   --bad: #b91c1c; /* danger */
   --on-primary: #ffffff;
-  --btn-from: #1d4ed8;
-  --btn-to: #1d4ed8;
+  --btn-from: #405dea;
+  --btn-to: #405dea;
 
-  --glow-primary: 0 1px 2px rgb(16 24 40 / 0.08);
-  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.05);
-  --shadow-2: 0 4px 12px -4px rgb(16 24 40 / 0.12);
-  --shadow-3: 0 12px 32px -12px rgb(16 24 40 / 0.2);
+  /* Pastel accents (chips, badges, highlights) */
+  --mint: #c9f1e8;
+  --lilac: #e5ddff;
+  --peach: #ffc8b5;
+  --sun: #ffe390;
+  --mono: "Cascadia Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+
+  --glow-primary: 0 2px 0 rgb(30 32 37 / 0.12);
+  --ink-edge: rgb(30 32 37 / 0.9);
+  --shadow-1: 0 1px 0 rgb(30 32 37 / 0.08);
+  --shadow-2: 4px 4px 0 rgb(30 32 37 / 0.9); /* offset card shadow, used sparingly (hero search, key panels) */
+  --shadow-3: 6px 6px 0 rgb(30 32 37 / 0.9);
   --hero-a: transparent;
   --hero-b: transparent;
   --grid-line: transparent;
@@ -58,8 +67,8 @@
   /* Radius */
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
+  --radius-lg: 1.1rem;
+  --radius-xl: 1.4rem;
 
   /* Motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -71,25 +80,32 @@
 }
 
 .dark {
-  --surface-0: #0f1115;
-  --surface-1: #16191f;
-  --surface-2: #1d2128;
-  --surface-3: #262b34;
-  --border: #2b3039;
-  --border-strong: #3d4452;
-  --fg: #eceef2;
-  --muted: #a0a8b6;
+  --surface-0: #14151a;
+  --surface-1: #1b1c22;
+  --surface-2: #23252c;
+  --surface-3: #2c2f37;
+  --border: rgb(242 242 238 / 0.16);
+  --border-strong: rgb(242 242 238 / 0.55);
+  --fg: #f2f2ee;
+  --muted: #a9acb3;
 
-  --primary: #7ba3ff;
-  --accent: #7ba3ff;
-  --good: #4ade80;
-  --warn: #fbbf24;
+  --primary: #8aa2ff;
+  --accent: #a6b8ff;
+  --good: #6ee7b7;
+  --warn: #ffd166;
   --bad: #f87171;
+  --on-primary: #101225;
 
-  --glow-primary: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-2: 0 6px 18px -6px rgb(0 0 0 / 0.5);
-  --shadow-3: 0 16px 40px -16px rgb(0 0 0 / 0.6);
+  --mint: #1f4a40;
+  --lilac: #34305a;
+  --peach: #5a3a30;
+  --sun: #5a4a1d;
+
+  --glow-primary: 0 2px 0 rgb(0 0 0 / 0.4);
+  --ink-edge: rgb(242 242 238 / 0.3);
+  --shadow-1: 0 1px 0 rgb(0 0 0 / 0.4);
+  --shadow-2: 4px 4px 0 rgb(242 242 238 / 0.25);
+  --shadow-3: 6px 6px 0 rgb(242 242 238 / 0.25);
   --hero-a: transparent;
   --hero-b: transparent;
   --grid-line: transparent;
@@ -111,6 +127,11 @@
   --color-warn: var(--warn);
   --color-caution: var(--warn);
   --color-bad: var(--bad);
+  --color-mint: var(--mint);
+  --color-lilac: var(--lilac);
+  --color-peach: var(--peach);
+  --color-sun: var(--sun);
+  --font-mono: var(--mono);
   --color-danger: var(--bad);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
@@ -156,6 +177,23 @@ body::before { content: none; }
 .gradient-bg {
   background-color: var(--primary);
   color: var(--on-primary);
+}
+
+h1, h2 {
+  letter-spacing: -0.025em;
+}
+h1 {
+  font-weight: 800;
+}
+
+/* Small mono label, like "AT A GLANCE" on the portfolio */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--primary);
 }
 .bg-grid {
   display: none;
@@ -259,4 +297,41 @@ textarea:focus-visible {
   .caret {
     display: none;
   }
+}
+
+
+/* ---- Light 3D depth: solid edges, lift on hover, press on click (no heavy effects) ---- */
+.lift-3d {
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out), border-color 180ms;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .lift-3d:hover {
+    transform: translate(-2px, -3px);
+    box-shadow: 4px 5px 0 var(--ink-edge);
+    border-color: var(--border-strong);
+  }
+  .lift-3d:active {
+    transform: translate(0, 0);
+    box-shadow: 1px 1px 0 var(--ink-edge);
+  }
+}
+/* Gentle perspective tilt for hero/product imagery. Add .tilt-3d to a wrapper. */
+.tilt-3d {
+  transform-style: preserve-3d;
+  transition: transform 260ms var(--ease-out);
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .tilt-3d:hover {
+    transform: perspective(900px) rotateX(3deg) rotateY(-4deg) translateZ(0);
+  }
+}
+/* Chips with a solid bottom edge like physical keys */
+.chip-3d {
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 2px 0 var(--ink-edge);
+  transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.chip-3d:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--ink-edge);
 }

@@ -28,7 +28,7 @@ export default function HomePage() {
         <ol className="grid gap-4 md:grid-cols-3">
           {STEPS.map((s, i) => (
             <li key={s.title} className="rounded-xl border border-line bg-surface p-4">
-              <p className="tabular text-sm font-medium text-muted">Step {i + 1}</p>
+              <p className="eyebrow">Step {i + 1}</p>
               <h3 className="mt-1 font-semibold">{s.title}</h3>
               <p className="mt-1 text-sm text-muted">{s.text}</p>
             </li>

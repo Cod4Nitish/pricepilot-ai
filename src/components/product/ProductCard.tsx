@@ -63,7 +63,7 @@ export default function ProductCard({
         isBest ? "border-good/60" : "border-line hover:border-line-strong",
       )}
     >
-      <div className="flex gap-3 sm:gap-4">
+      <div className="lift-3d flex gap-3 sm:gap-4">
         <ProductImage src={offer.imageUrl} alt={offer.title} className="h-24 w-24 shrink-0 sm:h-32 sm:w-32" />
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-1.5">

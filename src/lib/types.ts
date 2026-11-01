@@ -39,6 +39,13 @@ export interface Offer {
   verification: Verification;
   checkedAt: string; // ISO
   evidence?: string; // short verbatim page excerpt the price came from
+  // Additive, optional: ONLY set when read from the fetched page text / JSON-LD (never inferred)
+  warranty?: string;
+  returnPolicy?: string;
+  gtin?: string;
+  sku?: string;
+  rating?: { value: number; count: number | null };
+  deliveryText?: string; // delivery line shown on the page (verbatim); not pincode-specific
 }
 
 export type RetailerStatusState =

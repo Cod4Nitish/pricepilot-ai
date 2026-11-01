@@ -89,7 +89,9 @@ export function validate(want: Entity, queryText: string, c: Candidate): Resolut
     }
   }
   if (want.modelNumbers.length) {
-    const extra = have.modelNumbers.filter((m) => !want.modelNumbers.includes(m));
+    // Marketing numbers ("2 Year warranty", "2X zoom", "7 years of updates") are not model designators: only
+    // letter+digit designators (s23, a54, 14t) count as a conflicting extra model number.
+    const extra = have.modelNumbers.filter((m) => !want.modelNumbers.includes(m) && /[a-z]/.test(m) && !/^\d{1,2}x$/.test(m));
     if (extra.length && extra.every((m) => /^[a-z]?\d{1,3}[a-z]?$/.test(m)) && have.modelNumbers.length > want.modelNumbers.length) {
       hard("model", want.modelNumbers.join(" "), have.modelNumbers.join(" "), `Listing has a different model number (${extra.join(", ")}).`);
     }

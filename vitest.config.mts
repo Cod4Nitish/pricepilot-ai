@@ -8,6 +8,8 @@ export default defineConfig({
       "src/lib/__tests__/**/*.test.ts",
       "src/lib/fast/__tests__/**/*.test.ts",
       "src/lib/engine/__tests__/**/*.test.ts",
+      "src/lib/delivery/__tests__/**/*.test.ts",
+      "src/lib/shop/__tests__/**/*.test.ts",
       "src/components/**/__tests__/**/*.test.ts",
     ],
     environment: "node",

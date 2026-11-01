@@ -108,7 +108,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-2 sm:gap-4 sm:px-6">
           <Logo />
           <div className="hidden min-w-0 flex-1 lg:block">
-            <Suspense fallback={null}><HeaderSearch /></Suspense>
+            {path !== "/" && <Suspense fallback={null}><HeaderSearch /></Suspense>}
           </div>
           <div className="ml-auto flex items-center gap-1 lg:ml-0">
             <LocationChip />
@@ -143,9 +143,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </div>
-        <div className="mx-auto max-w-6xl px-3 pb-2 sm:px-6 lg:hidden">
-          <Suspense fallback={null}><HeaderSearch /></Suspense>
-        </div>
+        {path !== "/" && (
+          <div className="mx-auto max-w-6xl px-3 pb-2 sm:px-6 lg:hidden">
+            <Suspense fallback={null}><HeaderSearch /></Suspense>
+          </div>
+        )}
       </header>
 
       <main

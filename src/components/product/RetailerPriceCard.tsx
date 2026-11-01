@@ -32,7 +32,7 @@ export default function RetailerPriceCard({ offer, best = false, className }: { 
           </span>
         )}
       </header>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="lift-3d flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="tabular font-display text-2xl font-bold">{formatINR(offer.price)}</span>
         {hasMrp && <span className="tabular text-sm text-muted line-through">MRP {formatINR(offer.mrp)}</span>}
         {offer.discountPct !== null && offer.discountPct > 0 && (

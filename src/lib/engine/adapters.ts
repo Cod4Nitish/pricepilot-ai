@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import type { UnifiedOffer } from "./schema";
 
 export function fromEcommerceOffer(o: Offer, opts: { pageText?: string; locationId?: string | null } = {}): UnifiedOffer {
-  const text = [o.title, o.evidence ?? "", opts.pageText ?? "", ...o.offers].join("\n");
+  const text = [o.title, o.evidence ?? "", opts.pageText ?? "", ...o.offers, o.gtin ? `gtin: ${o.gtin}` : ""].join("\n");
   const gtins = extractGtins(text);
   const ent = entityFromText(o.title);
   ent.gtins = gtins;

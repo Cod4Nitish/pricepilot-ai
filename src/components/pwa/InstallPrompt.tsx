@@ -42,11 +42,11 @@ function ShareIcon() {
 }
 
 export function InstallInstructions({ className = "" }: { className?: string }) {
-  const card = "rounded-xl border border-[#27325f] bg-[#0F1A3A] p-4";
+  const card = "rounded-xl border border-line-strong bg-surface p-4";
   return (
-    <div className={`grid gap-3 text-sm text-slate-300 ${className}`}>
+    <div className={`grid gap-3 text-sm text-muted ${className}`}>
       <section className={card} aria-labelledby="install-android">
-        <h3 id="install-android" className="mb-2 font-semibold text-white">
+        <h3 id="install-android" className="mb-2 font-semibold text-fg">
           Android Chrome
         </h3>
         <ol className="list-decimal space-y-1 pl-5">
@@ -58,7 +58,7 @@ export function InstallInstructions({ className = "" }: { className?: string }) 
         </ol>
       </section>
       <section className={card} aria-labelledby="install-ios">
-        <h3 id="install-ios" className="mb-2 font-semibold text-white">
+        <h3 id="install-ios" className="mb-2 font-semibold text-fg">
           iPhone Safari
         </h3>
         <ol className="list-decimal space-y-1 pl-5">
@@ -72,7 +72,7 @@ export function InstallInstructions({ className = "" }: { className?: string }) 
         </ol>
       </section>
       <section className={card} aria-labelledby="install-desktop">
-        <h3 id="install-desktop" className="mb-2 font-semibold text-white">
+        <h3 id="install-desktop" className="mb-2 font-semibold text-fg">
           Desktop Chrome / Edge
         </h3>
         <ol className="list-decimal space-y-1 pl-5">
@@ -150,7 +150,7 @@ export default function InstallPrompt() {
   return (
     <aside
       aria-label="Install PricePilot"
-      className="fixed inset-x-2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto max-w-md rounded-2xl border border-[#3a4a85] bg-[#0F1A3A]/95 p-2 pl-3 text-white shadow-2xl backdrop-blur lg:inset-x-auto lg:bottom-4 lg:right-4 lg:mx-0 lg:w-72"
+      className="fixed inset-x-2 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-[45] mx-auto max-w-md rounded-2xl border border-line-strong bg-surface p-2 pl-3 text-fg shadow-[3px_3px_0_var(--ink-edge)] lg:inset-x-auto lg:bottom-4 lg:right-4 lg:mx-0 lg:w-72"
     >
       <div className="flex items-center gap-2.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -158,9 +158,9 @@ export default function InstallPrompt() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold leading-tight">Install PricePilot</p>
           {deferred ? (
-            <p className="text-xs leading-tight text-slate-300">Open it like an app.</p>
+            <p className="text-xs leading-tight text-muted">Open it like an app.</p>
           ) : (
-            <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-sm text-slate-300">
+            <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-sm text-muted">
               <li>
                 Tap the Share icon <ShareIcon />
               </li>
@@ -174,7 +174,7 @@ export default function InstallPrompt() {
           <button
             type="button"
             onClick={install}
-            className="min-h-10 shrink-0 cursor-pointer rounded-lg bg-primary px-3 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            className="min-h-10 shrink-0 cursor-pointer rounded-full bg-primary px-3 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           >
             Install
           </button>
@@ -183,7 +183,7 @@ export default function InstallPrompt() {
           type="button"
           onClick={dismiss}
           aria-label="Dismiss install prompt"
-          className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-md text-slate-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-md text-muted hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M6 6l12 12M18 6L6 18" />

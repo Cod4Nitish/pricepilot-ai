@@ -44,6 +44,7 @@ export interface FetchedPage {
   description?: string;
   text?: string;
   image_links?: string[];
+  links?: string[];
   latency_ms?: number;
 }
 export interface FetchPageError {
@@ -163,7 +164,7 @@ export async function search(
 }
 
 export async function fetchPages(
-  p: { urls: string[]; ttl?: number; perUrlTimeoutMs?: number; imageLinks?: boolean },
+  p: { urls: string[]; ttl?: number; perUrlTimeoutMs?: number; imageLinks?: boolean; links?: boolean },
   opts?: ClientOptions,
 ): Promise<FetchOutput> {
   if (p.urls.length === 0) return { results: [], errors: [] };
@@ -178,6 +179,7 @@ export async function fetchPages(
         ttl: p.ttl ?? 3600,
         per_url_timeout_ms: Math.min(110_000, Math.max(1, p.perUrlTimeoutMs ?? 45_000)),
         ...(p.imageLinks ? { image_links: true } : {}),
+        ...(p.links ? { links: true } : {}),
       },
     },
     { timeoutMs: 120_000, ...opts },
