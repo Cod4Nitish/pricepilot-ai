@@ -17,6 +17,14 @@ export function isJunk(url: string): boolean {
   return JUNK_DOMAINS.some((d) => h === d || h.endsWith("." + d));
 }
 
+/** Does a search result's title/URL talk about the requested budget ("under 50000", "under-50-000", "50k")? */
+export function mentionsBudget(text: string, budget: number | null): boolean {
+  if (budget === null) return false;
+  const t = text.toLowerCase().replace(/[,\s_-]+/g, "");
+  const k = budget % 1000 === 0 ? `${budget / 1000}k` : null;
+  return t.includes(`under${budget}`) || t.includes(`below${budget}`) || t.includes(`under₹${budget}`) || t.includes(`underrs${budget}`) || (k !== null && (t.includes(`under${k}`) || t.includes(`below${k}`) || t.includes(`under₹${k}`) || t.includes(`underrs${k}`)));
+}
+
 export function buildQueries(p: ParsedQuery, year: number): string[] {
   const cat = CAT_WORD[p.category] ?? p.category;
   const budget = p.budgetMax !== null ? ` under ${p.budgetMax}` : p.budgetMin !== null ? ` above ${p.budgetMin}` : "";
@@ -91,7 +99,9 @@ export async function discoverPages(p: ParsedQuery, deps: ShopDeps, log: Log, ye
       seen.add(key);
       const h = hostOf(r.url);
       const pref = PREFERRED.findIndex((d) => h === d || h.endsWith("." + d));
-      urls.push({ url: r.url, score: pref >= 0 ? 100 - pref : 0 });
+      // budget listing pages ("best phones under 50000") list in-budget models: read those first
+      const budgetPage = mentionsBudget(`${r.title ?? ""} ${u.pathname}`, p.budgetMax) ? 200 : 0;
+      urls.push({ url: r.url, score: budgetPage + (pref >= 0 ? 100 - pref : 0) });
     }
   }
   urls.sort((a, b) => b.score - a.score);
