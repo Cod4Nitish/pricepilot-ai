@@ -91,6 +91,9 @@ export interface ShopOffer extends UnifiedOffer {
   effectiveTotal: number | null; // only when listed price and all relevant fees known
   totalIsLowerBound: boolean;
   delivery: DeliveryInfo;
+  /** false => identity matched but some spec (GPU/CPU/RAM/storage) could not be confirmed from the listing title; listed, never "cheapest/best" */
+  specConfirmed?: boolean;
+  specNotes?: string[];
 }
 
 export interface Pick {

@@ -1,5 +1,8 @@
 // Two-stage entity resolution: (1) fuzzy candidate retrieval, (2) exact rule-based validation.
-import { canonicalBrand, entityFromText, fuzzyScore, normGtin, type Entity } from "./entity";
+import { BRAND_ALIAS, SUFFIXES, canonicalBrand, entityFromText, fuzzyScore, normGtin, type Entity } from "./entity";
+
+/** Words that describe a product class rather than identify a series. */
+const GENERIC = new Set(["gaming", "laptop", "notebook", "series", "intel", "amd", "core", "nvidia", "geforce", "graphics", "windows", "home", "edition", "black", "grey", "silver", "ssd", "hdd", "nvme", "fhd", "ips", "oled", "amoled", "led", "wifi", "backlit", "keyboard", "dos", "free", "office", "student", "creator", "business", "thin", "light", "tablet", "watch", "speaker", "tv", "television", "smart"]);
 
 export interface Candidate {
   id: string;
@@ -121,6 +124,30 @@ export function validate(want: Entity, queryText: string, c: Candidate): Resolut
   };
   numAttr("storage", want.storageGb, have.storageGb);
   numAttr("ram", want.ramGb, have.ramGb);
+
+  // GPU / CPU are SPECS: absent from a (possibly truncated) title => unverifiable; a different value => hard mismatch
+  if (want.gpu) {
+    if (!have.gpu) unver("gpu", want.gpu, "GPU not stated in the listing title.");
+    else if (have.gpu !== want.gpu) hard("gpu", want.gpu, have.gpu, `Listing has ${have.gpu}, ${want.gpu} requested.`);
+    else {
+      agreed++;
+      reasons.push(`GPU ${want.gpu} agrees.`);
+    }
+  }
+  if (want.cpuFamily || want.cpuModel) {
+    if (!have.cpuFamily && !have.cpuModel) unver("cpu", want.cpuModel ?? want.cpuFamily ?? null, "CPU not stated in the listing title.");
+    else if (want.cpuFamily && have.cpuFamily && want.cpuFamily !== have.cpuFamily) hard("cpu", want.cpuFamily, have.cpuFamily, `Listing has ${have.cpuFamily}, ${want.cpuFamily} requested.`);
+    else if (want.cpuModel && have.cpuModel && want.cpuModel !== have.cpuModel) hard("cpu", want.cpuModel, have.cpuModel, `Listing has CPU ${have.cpuModel}, ${want.cpuModel} requested.`);
+    else if (want.cpuModel && !have.cpuModel) unver("cpu", want.cpuModel, "CPU model not stated in the listing title.");
+    else {
+      agreed++;
+      reasons.push("CPU agrees.");
+    }
+  }
+  // series words (e.g. "katana", "nitro"): a missing distinctive word cannot be confirmed from the title
+  const seriesWords = want.tokens.filter((w) => /^[a-z]{3,}$/.test(w) && !SUFFIXES.has(w) && !GENERIC.has(w) && !BRAND_ALIAS[w]);
+  const missingSeries = seriesWords.filter((w) => !haveTokens.has(w));
+  if (missingSeries.length) unver("series", missingSeries.join(" "), `Series word "${missingSeries.join(" ")}" not found in the listing title.`);
 
   // condition: new vs refurbished is hard
   if (want.condition !== have.condition) hard("condition", want.condition, have.condition, `Listing is ${have.condition}, ${want.condition} requested.`);

@@ -23,7 +23,7 @@ export function evidenceScore(o: ShopOffer): number {
   return (o.verificationStatus === "verified" ? 0.5 : o.verificationStatus === "agent_verified" ? 0.4 : 0) + (o.stockStatus === "in_stock" ? 0.2 : 0) + (o.warranty ? 0.15 : 0) + (o.returnPolicy ? 0.15 : 0);
 }
 
-const eligible = (o: ShopOffer) => isVerified(o) && o.matchingConfidence >= MATCH_MIN_CONFIDENCE && o.listedPrice !== null && o.stockStatus !== "out_of_stock";
+const eligible = (o: ShopOffer) => isVerified(o) && o.specConfirmed !== false && o.matchingConfidence >= MATCH_MIN_CONFIDENCE && o.listedPrice !== null && o.stockStatus !== "out_of_stock";
 const byUrl = (a: ShopOffer, b: ShopOffer) => a.sourceUrl.localeCompare(b.sourceUrl);
 const minmax = (vals: number[]) => ({ min: Math.min(...vals), max: Math.max(...vals) });
 const norm01 = (v: number, mm: { min: number; max: number }) => (mm.max === mm.min ? 0 : (v - mm.min) / (mm.max - mm.min));
@@ -54,7 +54,9 @@ export function buildDecision(offers: ShopOffer[], weightsIn?: Partial<ShopWeigh
   const singleStoreOnly = retailers.size < 2;
 
   const skipped = offers.length - pool.length;
-  if (skipped > 0) notes.push(`${skipped} offer(s) were left out of the comparison (unverified price, out of stock, or low match confidence).`);
+  const unconfirmed = offers.filter((o) => o.specConfirmed === false).length;
+  if (unconfirmed > 0) notes.push(`${unconfirmed} offer(s) are listed with an unconfirmed spec (e.g. GPU/CPU not stated in the title) and were not considered for cheapest or best.`);
+  if (skipped - unconfirmed > 0) notes.push(`${skipped - unconfirmed} offer(s) were left out of the comparison (unverified price, out of stock, or low match confidence).`);
   if (pool.length === 0) {
     notes.push("No verified, in-stock, matching offer is available, so no pick can be made.");
     return { cheapestListed: null, cheapestPayable: null, fastest: null, bestOverall: null, notes, singleStoreOnly: true };

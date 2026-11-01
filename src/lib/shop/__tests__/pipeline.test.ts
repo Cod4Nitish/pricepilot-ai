@@ -81,7 +81,7 @@ describe("scoring: evidence only", () => {
     expect(s.components.find((c) => c.name === "performance")?.score).toBeNull();
     expect(s.missing).toEqual(expect.arrayContaining(["performance", "camera", "display", "software", "price"]));
     expect(s.provisional).toBe(true);
-    expect(s.total).not.toBeNull();
+    expect(s.total).toBeNull(); // only 15% of the weight has evidence
   });
   it("unknown chipset is not guessed", () => {
     const s = smartphoneConfig.score([f("chipset", "Helio G99 Ultra")], { price: null, priceRef: null, weights: smartphoneConfig.weightsFor({ preferredFeatures: [] }) });
@@ -90,8 +90,8 @@ describe("scoring: evidence only", () => {
   });
   it("known chipset tier is used and total renormalizes over available components", () => {
     const w = smartphoneConfig.weightsFor({ preferredFeatures: [] });
-    const s = smartphoneConfig.score([f("chipset", "Snapdragon 8 Gen 3"), f("battery_mah", 6500)], { price: null, priceRef: null, weights: w });
-    const expected = ((w.performance * 0.9 + w.battery * 1) / (w.performance + w.battery)) * 100;
+    const s = smartphoneConfig.score([f("chipset", "Snapdragon 8 Gen 3"), f("battery_mah", 6500), f("refresh_hz", 144)], { price: null, priceRef: null, weights: w });
+    const expected = ((w.performance * 0.9 + w.battery * 1 + w.display * 1) / (w.performance + w.battery + w.display)) * 100;
     expect(s.total).toBeCloseTo(expected, 0);
   });
   it("feature preference reweights components", () => {

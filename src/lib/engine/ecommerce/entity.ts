@@ -1,6 +1,7 @@
 // Product entity extraction from free text (query or listing title), GTIN handling and fuzzy similarity.
 import { createHash } from "node:crypto";
 import { parseMaxPrice, parseStorageRam } from "../../match";
+import { stripSpecPhrases } from "../../specs";
 
 const BRAND_WORDS = new Set([
   "apple", "samsung", "oneplus", "xiaomi", "realme", "oppo", "vivo", "iqoo", "motorola", "nothing", "google", "sony", "lg", "hp", "dell",
@@ -38,12 +39,17 @@ export interface Entity {
   colors: string[];
   condition: "new" | "refurbished";
   gtins: string[];
+  /** spec (NOT identity): e.g. "rtx 4050" */
+  gpu?: string | null;
+  cpuFamily?: string | null;
+  cpuModel?: string | null;
 }
 
 function normalize(s: string): string {
   return s
     .toLowerCase()
     .replace(/(\w)\+/g, "$1 plus")
+    .replace(/\b(\d+(?:\.\d+)?)-inch(?:es)?\b/g, " ")
     .replace(/\b(\d+(?:\.\d+)?)\s*(?:gb|tb|mah|hz|mp|w|watt|watts|inch|inches|ltr|l|kg|ml|cm)\b/g, " ")
     .replace(/\b\d+\s*(?:pcs|pc|pieces|piece|units|packs|pack)\b/g, " ")
     .replace(/\bpack of \d+\b/g, " ")
@@ -73,7 +79,8 @@ export function canonicalBrand(b: string | null | undefined): string | null {
 
 export function entityFromText(text: string): Entity {
   const { storageGb, ramGb } = parseStorageRam(text);
-  const norm = normalize(text);
+  const sp = stripSpecPhrases(text.toLowerCase());
+  const norm = normalize(sp.rest);
   const raw = norm.split(/[^a-z0-9]+/).filter(Boolean).flatMap(splitGlue);
   let brand: string | null = null;
   for (const w of raw) {
@@ -95,6 +102,9 @@ export function entityFromText(text: string): Entity {
     colors,
     condition: REFURB_RE.test(text) ? "refurbished" : "new",
     gtins: extractGtins(text),
+    gpu: sp.gpu,
+    cpuFamily: sp.cpuFamily,
+    cpuModel: sp.cpuModel,
   };
 }
 
@@ -141,7 +151,7 @@ export function trigramJaccard(a: string, b: string): number {
   return i / (A.size + B.size - i);
 }
 export function tokenSet(text: string): Set<string> {
-  return new Set(normalize(text).split(/[^a-z0-9]+/).filter(Boolean).flatMap(splitGlue).filter((w) => !STOP.has(w)));
+  return new Set(normalize(stripSpecPhrases(text.toLowerCase()).rest).split(/[^a-z0-9]+/).filter(Boolean).flatMap(splitGlue).filter((w) => !STOP.has(w)));
 }
 /** Token-set ratio: blend of query-token coverage and Dice overlap (order independent). */
 export function tokenSetRatio(a: string, b: string): number {
@@ -159,7 +169,7 @@ export function fuzzyScore(query: string, title: string): number {
 /** Stable product id = hash of the resolved entity key (GTIN when known, else brand+model+storage+ram+condition+suffix). */
 export function entityKey(e: Entity): string {
   if (e.gtins[0]) return `gtin:${e.gtins[0]}`;
-  return ["b", e.brand ?? "", "m", [...e.tokens].sort().join("-"), "s", e.storageGb ?? "", "r", e.ramGb ?? "", "c", e.condition].join("|");
+  return ["b", e.brand ?? "", "m", [...e.tokens].sort().join("-"), "s", e.storageGb ?? "", "r", e.ramGb ?? "", "c", e.condition, ...(e.gpu ? ["g", e.gpu] : [])].join("|");
 }
 export function productIdFor(e: Entity): string {
   return createHash("sha1").update(entityKey(e)).digest("hex").slice(0, 16);

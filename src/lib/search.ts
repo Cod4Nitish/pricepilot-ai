@@ -20,6 +20,23 @@ const defaultDeps: Deps = { search: tf.search, fetchPages: tf.fetchPages, runAge
 
 export const MAX_AGENT_RUNS = 3;
 const CANDIDATES_PER_RETAILER = 3;
+const CANDIDATES_PER_RETAILER_DEVICE = 5; // laptop/phone lookups: titles are often truncated, so look at more pages (Fetch is cheap; Agent cap stays MAX_AGENT_RUNS)
+
+/** 5 candidates per retailer for device-like queries (brand + spec/device word), else 3. */
+export function candidateCap(parsed: ParsedQuery): number {
+  const device = !!parsed.brand && (parsed.gpu !== undefined || parsed.storageGb !== undefined || parsed.ramGb !== undefined || /laptop|notebook|phone|iphone|galaxy|macbook|thinkpad|ideapad/i.test(parsed.rawQuery));
+  return device ? CANDIDATES_PER_RETAILER_DEVICE : CANDIDATES_PER_RETAILER;
+}
+
+const SERIES_SKIP = new Set(["gaming", "laptop", "notebook", "series", "intel", "amd", "core", "windows", "home"]);
+/** Does the title contain the FULL series name (all non-spec model tokens of the query)? */
+export function hasFullSeries(parsed: ParsedQuery, title: string): boolean {
+  const toks = parsed.modelTokens.filter((w) => !SERIES_SKIP.has(w));
+  if (!toks.length) return false;
+  const have = new Set(title.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  const squashed = title.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return toks.every((w) => have.has(w) || squashed.includes(w));
+}
 const cache = new TtlCache<SearchResponse>(10 * 60_000, 100);
 export function clearSearchCache() {
   cache.clear();
@@ -188,6 +205,7 @@ async function runPipeline(
     }),
   );
 
+  const cap = candidateCap(parsed);
   const candidates: Candidate[] = [];
   const excludedPre: Offer[] = [];
   for (const s of searched) {
@@ -238,7 +256,7 @@ async function runPipeline(
         const out = await deps.fetchPages({ urls: categoryUrls.slice(0, 1), ttl: 3600, links: true });
         const pg = out.results[0];
         if (pg) {
-          const links = discoverProductLinks(s.r, searchQuery, { links: pg.links, markdown: pg.text }, CANDIDATES_PER_RETAILER);
+          const links = discoverProductLinks(s.r, searchQuery, { links: pg.links, markdown: pg.text }, cap);
           for (const l of links) {
             const lv = validateRetailerUrl(l.url);
             if (!lv.ok || lv.retailer.id !== s.r.id) continue;
@@ -256,8 +274,8 @@ async function runPipeline(
       }
     }
 
-    scored.sort((a, b) => b.prescore - a.prescore);
-    candidates.push(...scored.slice(0, CANDIDATES_PER_RETAILER));
+    scored.sort((a, b) => Number(hasFullSeries(parsed, b.searchTitle)) - Number(hasFullSeries(parsed, a.searchTitle)) || b.prescore - a.prescore);
+    candidates.push(...scored.slice(0, cap));
     if (scored.length === 0) {
       statusBy.set(s.r.id, {
         retailer: s.r.id,

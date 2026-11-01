@@ -1,7 +1,11 @@
+import { stripSpecPhrases } from "./specs";
 import type { ProductSpec } from "./types";
 
 export interface ParsedQuery extends ProductSpec {
   rawQuery: string;
+  /** GPU / CPU are specs, never model tokens (e.g. "rtx 4050") */
+  gpu?: string;
+  cpuModel?: string;
   maxPrice?: number;
   /** normalized model tokens (brand/storage/color/price phrases removed) */
   modelTokens: string[];
@@ -81,7 +85,8 @@ export function parseQuery(raw: string): ParsedQuery {
   const { storageGb, ramGb } = parseStorageRam(norm);
   const condition: ProductSpec["condition"] = REFURB_RE.test(norm) ? "refurbished" : "new";
 
-  const words = norm.replace(/\b\d{1,2}x\d{2,4}\s*gb\b/g, " ").replace(/\d+\s*(gb|tb)\b/g, " ").split(/[^a-z0-9₹]+/).filter(Boolean);
+  const sp = stripSpecPhrases(norm);
+  const words = sp.rest.replace(/\b\d{1,2}x\d{2,4}\s*gb\b/g, " ").replace(/\d+\s*(gb|tb)\b/g, " ").split(/[^a-z0-9₹]+/).filter(Boolean);
   const brand = words.find((w) => BRANDS.includes(w));
   const color = words.find((w) => COLORS.includes(w));
   const tokens = [...new Set(words.filter((w) => w !== brand && !COLORS.includes(w) && !/^₹/.test(w) && !STOP.has(w)))];
@@ -94,6 +99,8 @@ export function parseQuery(raw: string): ParsedQuery {
     ramGb,
     color,
     condition,
+    gpu: sp.gpu ?? undefined,
+    cpuModel: sp.cpuModel ?? undefined,
     modelTokens: tokens,
   };
 }
@@ -161,6 +168,16 @@ export function scoreListing(q: ParsedQuery, title: string): MatchResult {
   if (q.ramGb !== undefined && spec.ramGb !== undefined) {
     if (spec.ramGb !== q.ramGb) return exclude(`Excluded: ${spec.ramGb}GB RAM listed, ${q.ramGb}GB requested.`);
     score += 0.04;
+  }
+
+  // GPU is a spec: different => exclude; absent from a (possibly truncated) title => weaker confidence, not exclusion
+  if (q.gpu) {
+    const tg = stripSpecPhrases(t).gpu;
+    if (tg && tg !== q.gpu) return exclude(`Excluded: ${tg} listed, ${q.gpu} requested.`);
+    if (!tg) {
+      score -= 0.1;
+      notes.push("GPU not stated in listing title (unconfirmed).");
+    } else score += 0.03;
   }
 
   // soft tokens

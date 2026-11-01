@@ -29,6 +29,9 @@ export interface BuildOffersResult {
   statuses: SourceStatus[];
 }
 
+const SPEC_ATTRS = new Set(["gpu", "cpu", "ram", "storage"]);
+export const PRICE_PLAUSIBILITY_FLOOR = 0.35;
+
 export function defaultDelivery(pincode: string | null): DeliveryInfo {
   return {
     pincode,
@@ -60,10 +63,19 @@ export async function buildOffers(productQuery: string, ctx: BuildOffersCtx, dep
 
   const excluded: ExcludedShopOffer[] = cmp.excluded.map((x) => ({ title: x.offer.productName, retailer: x.offer.retailer, reason: x.reason }));
   const offers: ShopOffer[] = [];
+  const isVerifiedPrice = (v: string, p: number | null) => (v === "verified" || v === "agent_verified") && p !== null;
   for (const e of cmp.entries) {
+    let unconfirmed: string[] | null = null;
     if (e.resolution.decision !== "match") {
-      excluded.push({ title: e.offer.productName, retailer: e.offer.retailer, reason: `Not confirmed as the same product (confidence ${e.resolution.confidence}). ${e.resolution.mismatches.map((m) => m.note).join(" ")}`.trim() });
-      continue;
+      // 'possible' ONLY because specs are unverifiable (nothing contradicts) + price read from the page => listed, flagged unconfirmed
+      const unver = e.resolution.mismatches.filter((m) => m.severity === "unverifiable");
+      const onlySpecs = e.resolution.decision === "possible" && unver.length > 0 && e.resolution.mismatches.every((m) => m.severity === "unverifiable" && SPEC_ATTRS.has(m.attribute)) && e.resolution.confidence >= 0.6;
+      if (onlySpecs && isVerifiedPrice(e.offer.verificationStatus, e.offer.listedPrice)) {
+        unconfirmed = unver.map((m) => m.note);
+      } else {
+        excluded.push({ title: e.offer.productName, retailer: e.offer.retailer, reason: `Not confirmed as the same product (confidence ${e.resolution.confidence}). ${e.resolution.mismatches.map((m) => m.note).join(" ")}`.trim() });
+        continue;
+      }
     }
     const src = rawByUrl.get(e.offer.sourceUrl);
     const conditional: ConditionalOffer[] = [
@@ -72,7 +84,9 @@ export async function buildOffers(productQuery: string, ctx: BuildOffersCtx, dep
     ];
     offers.push({
       ...e.offer,
-      matchingConfidence: e.resolution.confidence,
+      evidence: unconfirmed ? [...e.offer.evidence, { text: `Unconfirmed spec: ${unconfirmed.join(" ")}`, source: e.offer.sourceUrl }] : e.offer.evidence,
+      ...(unconfirmed ? { specConfirmed: false, specNotes: unconfirmed } : {}),
+      matchingConfidence: unconfirmed ? Math.min(0.79, e.resolution.confidence) : e.resolution.confidence,
       eligibleDiscount: e.pricing.eligibleDiscount > 0 ? e.pricing.eligibleDiscount : null,
       imageUrl: src?.imageUrl ?? null,
       mrp: e.offer.mrp,
@@ -87,6 +101,23 @@ export async function buildOffers(productQuery: string, ctx: BuildOffersCtx, dep
       totalIsLowerBound: e.pricing.totalIsLowerBound,
       delivery: defaultDelivery(ctx.pincode),
     });
+  }
+  // Price plausibility: with >=3 verified prices, a price below 35% of the median is almost surely an accessory/other item.
+  const verifiedPrices = offers.filter((o) => isVerifiedPrice(o.verificationStatus, o.listedPrice)).map((o) => o.listedPrice as number).sort((a, b) => a - b);
+  let kept = offers;
+  if (verifiedPrices.length >= 3) {
+    const mid = Math.floor(verifiedPrices.length / 2);
+    const median = verifiedPrices.length % 2 ? verifiedPrices[mid] : (verifiedPrices[mid - 1] + verifiedPrices[mid]) / 2;
+    kept = [];
+    for (const o of offers) {
+      if (o.listedPrice !== null && o.listedPrice < median * PRICE_PLAUSIBILITY_FLOOR) {
+        excluded.push({ title: o.productName, retailer: o.retailer, reason: "price implausible for this product (possible accessory)" });
+      } else kept.push(o);
+    }
+  }
+  if (kept !== offers) {
+    offers.length = 0;
+    offers.push(...kept);
   }
   offers.sort((a, b) => (a.effectiveTotal ?? Infinity) - (b.effectiveTotal ?? Infinity) || a.sourceUrl.localeCompare(b.sourceUrl));
   return { offers, excluded, statuses: sr.statuses.map(mapStatus) };
