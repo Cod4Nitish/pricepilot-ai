@@ -1,3 +1,4 @@
+import { userKeyHeaders } from "./user-key";
 // Client helpers for the /shop UI: fetch wrappers + pure formatting/sorting helpers.
 // Rule: unknown (null) is never rendered as 0 and never guessed.
 import type { DeliveryInfo, ProductGroup, ShopOffer, ShopResponse, ShopWeights } from "@/lib/shop/types";
@@ -18,7 +19,7 @@ export class ShopApiError extends Error {
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+    res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...userKeyHeaders() }, body: JSON.stringify(body), signal });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new ShopApiError(0, "NETWORK", "Could not reach the server. Check your connection.");

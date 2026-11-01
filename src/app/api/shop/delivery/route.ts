@@ -1,3 +1,4 @@
+import { requireTinyFishKey, withUserKey } from "@/lib/byok";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, handleError, limited, readJson } from "@/lib/api";
@@ -32,13 +33,15 @@ export async function POST(req: Request) {
       if (!v.ok) return errorResponse(400, "INVALID_INPUT", `offers: ${v.reason}`);
       if (v.retailer.id !== o.retailer) return errorResponse(400, "INVALID_INPUT", `offers: retailer "${o.retailer}" does not match the URL.`);
     }
-    requireEnv("TINYFISH_API_KEY");
-    const results: { offerId: string; delivery: DeliveryInfo }[] = await Promise.all(
-      checked.map(async ({ o, v }) => ({
-        offerId: o.offerId,
-        delivery: await checkDelivery({ offerId: o.offerId, url: v.ok ? v.url : o.url, retailer: o.retailer }, body.pincode),
-      })),
-    );
+    const results: { offerId: string; delivery: DeliveryInfo }[] = await withUserKey(req, async () => {
+      requireTinyFishKey();
+      return Promise.all(
+        checked.map(async ({ o, v }) => ({
+          offerId: o.offerId,
+          delivery: await checkDelivery({ offerId: o.offerId, url: v.ok ? v.url : o.url, retailer: o.retailer }, body.pincode),
+        })),
+      );
+    });
     return NextResponse.json({ results });
   } catch (e) {
     return handleError(e);

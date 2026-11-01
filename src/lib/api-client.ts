@@ -1,3 +1,4 @@
+import { userKeyHeaders } from "./user-key";
 import type { AgentRun, BasketLine, BasketPlan, PricePoint, SearchResponse, WatchlistItem } from "./types";
 import { getAccessToken } from "./supabase-browser";
 
@@ -17,6 +18,7 @@ export class ApiRequestError extends Error {
 async function request<T>(path: string, init: RequestInit = {}, auth = false): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set("Content-Type", "application/json");
+  for (const [k, v] of Object.entries(userKeyHeaders())) headers.set(k, v);
   if (auth) {
     const token = await getAccessToken();
     if (!token) throw new ApiRequestError(401, "UNAUTHENTICATED", "Sign in to use this feature.");

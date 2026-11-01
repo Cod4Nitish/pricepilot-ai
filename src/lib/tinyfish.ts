@@ -1,6 +1,6 @@
 import { getCostConfig } from "./cost/config";
 import { meter } from "./cost/meter";
-import { requireEnv } from "./env";
+import { requireTinyFishKey, userKey } from "./byok";
 
 export type TinyFishErrorKind =
   | "auth" // 401
@@ -115,7 +115,7 @@ async function request<T>(
   init: { method: string; body?: unknown },
   opts: ClientOptions = {},
 ): Promise<T> {
-  const apiKey = opts.apiKey ?? requireEnv("TINYFISH_API_KEY");
+  const apiKey = opts.apiKey ?? requireTinyFishKey();
   const retries = opts.retries ?? 3;
   const base = opts.baseDelayMs ?? 500;
   const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -237,7 +237,8 @@ export async function runAgent(
   opts?: ClientOptions & { onRunId?: (id: string) => void },
 ): Promise<AgentRunResult> {
   return paidAgentLimiter().run(async () => {
-    const gate = meter.canStartAgent();
+    // the server's daily paid limits protect the SERVER key; a user's own key is billed to their account
+    const gate = userKey() ? ({ ok: true } as const) : meter.canStartAgent();
     if (!gate.ok) throw new TinyFishError("budget_exhausted", gate.message);
     const created = await request<{ run_id?: string; error?: unknown }>(
       `${AGENT_BASE}/automation/run-async`,

@@ -20,7 +20,8 @@ export function handleError(e: unknown) {
   if (e instanceof NotConfiguredError) return notConfigured(e.what);
   if (e instanceof ZodError) return errorResponse(400, "INVALID_INPUT", e.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; "));
   if (e instanceof TinyFishError) {
-    if (e.kind === "insufficient_credits") return errorResponse(502, "UPSTREAM_CREDITS", "The data provider has no remaining credits.");
+    if (e.kind === "insufficient_credits") return errorResponse(502, "UPSTREAM_CREDITS", "The TinyFish account has no remaining credits. Add credits or use another TinyFish API key in Settings.");
+    if (e.kind === "auth") return errorResponse(502, "UPSTREAM_AUTH", "TinyFish rejected the API key. Check the key in Settings.");
     if (e.kind === "rate_limited") return errorResponse(503, "UPSTREAM_RATE_LIMITED", "The data provider is rate limiting; try again shortly.");
     if (e.kind === "budget_exhausted") return errorResponse(503, "PAID_BUDGET_EXHAUSTED", e.message);
     return errorResponse(502, "UPSTREAM_ERROR", `Data provider error (${e.kind}).`);

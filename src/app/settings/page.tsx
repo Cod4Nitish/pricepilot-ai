@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, MonitorSmartphone, XCircle } from "lucide-react";
 import { api } from "@/lib/api-client";
@@ -12,6 +12,81 @@ import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import ErrorCard from "@/components/product/ErrorCard";
+import { clearUserKey, getUserKey, maskKey, setUserKey, userKeyHeaders } from "@/lib/user-key";
+
+function TinyFishKey() {
+  const [saved, setSaved] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setSaved(getUserKey()), []);
+
+  async function test(): Promise<boolean> {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await fetch("/api/key-check", { method: "POST", headers: userKeyHeaders() });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: { message?: string } };
+      const ok = r.ok && j.ok === true;
+      setMsg({ ok, text: j.message ?? j.error?.message ?? (ok ? "Key works." : "Key check failed.") });
+      return ok;
+    } catch {
+      setMsg({ ok: false, text: "Could not reach the server to check the key." });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function save() {
+    const k = draft.trim();
+    if (!/^[A-Za-z0-9_\-.:]{16,200}$/.test(k)) {
+      setMsg({ ok: false, text: "That does not look like a TinyFish API key." });
+      return;
+    }
+    const prev = getUserKey();
+    setUserKey(k);
+    if (await test()) {
+      setSaved(k);
+      setDraft("");
+    } else if (prev) setUserKey(prev);
+    else clearUserKey();
+  }
+  function remove() {
+    clearUserKey();
+    setSaved(null);
+    setMsg({ ok: true, text: "Removed. Searches use the site's own TinyFish key again." });
+  }
+
+  return (
+    <div className="space-y-3 text-sm">
+      <p className="text-muted">
+        Use your own TinyFish API key for searches from this browser, for example when the site's credits run out.
+        Get one at <a className="text-primary underline" href="https://agent.tinyfish.ai/api-keys" target="_blank" rel="noopener noreferrer">tinyfish.ai</a>.
+      </p>
+      <p>
+        Current key: <strong>{saved ? `Your key (${maskKey(saved)})` : "Site default"}</strong>
+      </p>
+      <form
+        className="flex flex-col gap-2 sm:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <label htmlFor="tf-key" className="sr-only">TinyFish API key</label>
+        <Input id="tf-key" type="password" autoComplete="off" spellCheck={false} placeholder={saved ? "Paste a new key to replace it" : "Paste your TinyFish API key"} value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <Button type="submit" disabled={busy || !draft.trim()}>{busy ? "Checking..." : saved ? "Replace key" : "Save key"}</Button>
+        {saved && <Button type="button" variant="secondary" onClick={remove} disabled={busy}>Remove</Button>}
+        {saved && <Button type="button" variant="secondary" onClick={() => void test()} disabled={busy}>Test</Button>}
+      </form>
+      {msg && <p role="status" className={msg.ok ? "text-good" : "text-warn"}>{msg.ok ? "✓ " : "✕ "}{msg.text}</p>}
+      <p className="text-xs text-muted">
+        Stored only in this browser. It is sent over HTTPS with your searches, used only for that request, and never saved or logged on the server.
+        Paid Agent steps run on your key are billed to your TinyFish account. Do not use this on a shared computer.
+      </p>
+    </div>
+  );
+}
 
 function HealthRow({ label, ok, hint }: { label: string; ok: boolean; hint: string }) {
   return (
@@ -95,6 +170,11 @@ export default function SettingsPage() {
             {platform === "desktop" && (<><li>Open PricePilot AI in Chrome or Edge.</li><li>Click the install icon at the right of the address bar.</li><li>Confirm “Install”.</li></>)}
           </ol>
         </div>
+      </Card>
+
+      <Card id="tinyfish-key">
+        <CardTitle>TinyFish API key</CardTitle>
+        <div className="mt-3"><TinyFishKey /></div>
       </Card>
 
       <Card>

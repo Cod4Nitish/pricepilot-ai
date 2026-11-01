@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { handleError, limited, readJson } from "@/lib/api";
-import { requireEnv } from "@/lib/env";
+import { requireTinyFishKey, withUserKey } from "@/lib/byok";
 import { withCostContext } from "@/lib/cost/context";
 import { runShop } from "@/lib/shop/pipeline";
 
@@ -28,13 +28,15 @@ export async function POST(req: Request) {
     const rl = limited(req, "shop", 3);
     if (rl) return rl;
     const { fresh, ...input } = Body.parse(await readJson(req));
-    requireEnv("TINYFISH_API_KEY");
+    return await withUserKey(req, async () => {
+    requireTinyFishKey();
     if (fresh) {
       const frl = limited(req, "shop-fresh", 2);
       if (frl) return frl;
     }
     const { result, usage } = await withCostContext(!!fresh, () => runShop(input, fresh ? { noCache: true } : {}));
     return NextResponse.json({ ...result, usage: result.cached ? { ...usage, cacheHits: usage.cacheHits + 1 } : usage });
+    });
   } catch (e) {
     return handleError(e);
   }

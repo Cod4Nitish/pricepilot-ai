@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireEnv } from "./env";
+import { requireTinyFishKey } from "./byok";
 import { TtlCache } from "./cache";
 import { getCostConfig, type CostConfig } from "./cost/config";
 import { costContext } from "./cost/context";
@@ -872,7 +872,7 @@ export async function searchProducts(rawQuery: string, opts: SearchOptions = {})
 async function searchProductsInner(rawQuery: string, opts: SearchOptions): Promise<SearchResponse> {
   const query = rawQuery.trim();
   if (!query) throw new SearchInputError("Query is empty.");
-  if (!opts.deps) requireEnv("TINYFISH_API_KEY");
+  if (!opts.deps) requireTinyFishKey();
   const base = getCostConfig();
   const cfg: CostConfig = opts.routing ? { ...base, routing: opts.routing } : base;
   const fresh = !!opts.fresh;

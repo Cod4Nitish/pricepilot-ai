@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { handleError, limited, readJson } from "@/lib/api";
+import { withUserKey } from "@/lib/byok";
 import { searchProducts } from "@/lib/search";
 
 export const runtime = "nodejs";
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
     const routingHeader = req.headers.get("x-pp-routing");
     const routing = !isProd && (routingHeader === "legacy" || routingHeader === "adaptive") ? routingHeader : undefined;
     const bench = !isProd && req.headers.get("x-pp-bench") === "1";
-    const resp = await searchProducts(query, { fresh, routing, skipCache: bench });
+    const resp = await withUserKey(req, () => searchProducts(query, { fresh, routing, skipCache: bench }));
     return NextResponse.json(resp);
   } catch (e) {
     return handleError(e);
