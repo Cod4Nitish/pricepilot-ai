@@ -22,6 +22,7 @@ export function handleError(e: unknown) {
   if (e instanceof TinyFishError) {
     if (e.kind === "insufficient_credits") return errorResponse(502, "UPSTREAM_CREDITS", "The data provider has no remaining credits.");
     if (e.kind === "rate_limited") return errorResponse(503, "UPSTREAM_RATE_LIMITED", "The data provider is rate limiting; try again shortly.");
+    if (e.kind === "budget_exhausted") return errorResponse(503, "PAID_BUDGET_EXHAUSTED", e.message);
     return errorResponse(502, "UPSTREAM_ERROR", `Data provider error (${e.kind}).`);
   }
   if (e instanceof Error && e.name === "SearchInputError") return errorResponse(400, "INVALID_INPUT", e.message);

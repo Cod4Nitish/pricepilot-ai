@@ -9,14 +9,16 @@ export interface RetailerConfig {
   /** Fetch markdown is known to contain price (else Agent fallback needed). */
   fetchHasPrice: boolean;
   proven: boolean;
+  /** Electronics-only store: a paid Agent run here is only justified for electronics queries. */
+  electronicsOnly: boolean;
 }
 
 export const RETAILERS: RetailerConfig[] = [
-  { id: "amazon", name: "Amazon.in", domain: "amazon.in", productUrlRegex: /\/(?:dp|gp\/product)\/[A-Z0-9]{10}|\/[^/]+\/dp\/[A-Z0-9]{10}/i, enabled: true, fetchHasPrice: true, proven: true },
-  { id: "flipkart", name: "Flipkart", domain: "flipkart.com", productUrlRegex: /\/p\/itm[a-z0-9]+|[?&]pid=[A-Z0-9]+/i, enabled: true, fetchHasPrice: true, proven: true },
-  { id: "croma", name: "Croma", domain: "croma.com", productUrlRegex: /\/p\/\d+/i, enabled: true, fetchHasPrice: false, proven: true },
-  { id: "reliance", name: "Reliance Digital", domain: "reliancedigital.in", productUrlRegex: /reliancedigital\.in\/(?:[a-z0-9-]+\/)?p\/\d{6,}/i, enabled: true, fetchHasPrice: false, proven: false },
-  { id: "vijay", name: "Vijay Sales", domain: "vijaysales.com", productUrlRegex: /vijaysales\.com\/p\/[A-Za-z]{0,2}\d{4,}|vijaysales\.com\/(?!c\/|category|collections?\/|search|brand|pages?\/)[a-z0-9][a-z0-9-]{14,}\/\d{4,}(?:\/|$|\?)/i, enabled: true, fetchHasPrice: false, proven: false },
+  { id: "amazon", name: "Amazon.in", domain: "amazon.in", productUrlRegex: /\/(?:dp|gp\/product)\/[A-Z0-9]{10}|\/[^/]+\/dp\/[A-Z0-9]{10}/i, enabled: true, fetchHasPrice: true, proven: true, electronicsOnly: false },
+  { id: "flipkart", name: "Flipkart", domain: "flipkart.com", productUrlRegex: /\/p\/itm[a-z0-9]+|[?&]pid=[A-Z0-9]+/i, enabled: true, fetchHasPrice: true, proven: true, electronicsOnly: false },
+  { id: "croma", name: "Croma", domain: "croma.com", productUrlRegex: /\/p\/\d+/i, enabled: true, fetchHasPrice: false, proven: true, electronicsOnly: true },
+  { id: "reliance", name: "Reliance Digital", domain: "reliancedigital.in", productUrlRegex: /reliancedigital\.in\/(?:[a-z0-9-]+\/)?p\/\d{6,}/i, enabled: true, fetchHasPrice: false, proven: false, electronicsOnly: true },
+  { id: "vijay", name: "Vijay Sales", domain: "vijaysales.com", productUrlRegex: /vijaysales\.com\/p\/[A-Za-z]{0,2}\d{4,}|vijaysales\.com\/(?!c\/|category|collections?\/|search|brand|pages?\/)[a-z0-9][a-z0-9-]{14,}\/\d{4,}(?:\/|$|\?)/i, enabled: true, fetchHasPrice: false, proven: false, electronicsOnly: true },
 ];
 
 export const RETAILER_BY_ID: Record<RetailerId, RetailerConfig> = Object.fromEntries(

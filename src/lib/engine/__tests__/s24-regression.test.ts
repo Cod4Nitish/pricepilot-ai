@@ -76,7 +76,11 @@ describe("S24 256GB regression (exact match must reach 'match' and be recommenda
   it("recommends the verified Flipkart price, filters junk, dedupes, keeps variants out", async () => {
     clearSearchCache();
     const d = deps();
-    const eng = await runEngine({ text: "Samsung Galaxy S24 256GB" }, { cache: null, collectors: { ecommerce: (q) => searchProducts(q, { deps: d, persist: false, skipCache: true }), quick: async () => ({ results: [], failures: [] }) } });
+    // target 3 retailers so the adaptive router still sends the agent to Croma (with the default target of 2 it stops early)
+    process.env.PP_TARGET_VERIFIED_RETAILERS = "3";
+    const eng = await runEngine({ text: "Samsung Galaxy S24 256GB" }, { cache: null, collectors: { ecommerce: (q) => searchProducts(q, { deps: d, persist: false, skipCache: true }), quick: async () => ({ results: [], failures: [] }) } }).finally(() => {
+      delete process.env.PP_TARGET_VERIFIED_RETAILERS;
+    });
     const item = eng.perItem[0];
     expect(item.recommendation.enoughEvidence).toBe(true);
     expect(item.recommendation.cheapest?.retailer).toBe("flipkart");

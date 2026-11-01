@@ -1,3 +1,5 @@
+import { getCostConfig } from "./cost/config";
+import { meter } from "./cost/meter";
 import { requireEnv } from "./env";
 
 export type TinyFishErrorKind =
@@ -8,7 +10,8 @@ export type TinyFishErrorKind =
   | "timeout"
   | "network"
   | "bad_request"
-  | "upstream";
+  | "upstream"
+  | "budget_exhausted"; // app-side paid-usage limit (daily runs / USD); never retried
 
 export class TinyFishError extends Error {
   constructor(
@@ -62,6 +65,8 @@ export interface AgentRunResult {
   status: AgentStatus;
   result: unknown;
   error?: string;
+  /** Provider-metered step count (GET /v1/runs num_of_steps); null when the provider did not return it. */
+  steps?: number | null;
 }
 
 export interface ClientOptions {
@@ -159,6 +164,7 @@ export async function search(
   if (p.includeDomains?.length) qs.set("include_domains", p.includeDomains.join(","));
   if (p.excludeDomains?.length) qs.set("exclude_domains", p.excludeDomains.join(","));
   if (p.page !== undefined) qs.set("page", String(Math.min(10, Math.max(0, p.page))));
+  meter.searchCall();
   const out = await request<Partial<SearchOutput>>(`${SEARCH_URL}?${qs}`, { method: "GET" }, opts);
   return { query: out.query ?? p.query, results: out.results ?? [], total_results: out.total_results ?? 0, page: out.page ?? 0 };
 }
@@ -169,6 +175,7 @@ export async function fetchPages(
 ): Promise<FetchOutput> {
   if (p.urls.length === 0) return { results: [], errors: [] };
   if (p.urls.length > 10) throw new TinyFishError("bad_request", "fetchPages accepts at most 10 urls.");
+  meter.fetchCall(p.urls.length);
   const out = await request<Partial<FetchOutput>>(
     FETCH_URL,
     {
@@ -177,7 +184,7 @@ export async function fetchPages(
         urls: p.urls,
         format: "markdown",
         ttl: p.ttl ?? 3600,
-        per_url_timeout_ms: Math.min(110_000, Math.max(1, p.perUrlTimeoutMs ?? 45_000)),
+        per_url_timeout_ms: Math.min(110_000, Math.max(1, p.perUrlTimeoutMs ?? getCostConfig().fetchTimeoutMs)),
         ...(p.imageLinks ? { image_links: true } : {}),
         ...(p.links ? { links: true } : {}),
       },
@@ -187,6 +194,36 @@ export async function fetchPages(
   return { results: out.results ?? [], errors: out.errors ?? [] };
 }
 
+/**
+ * TinyFish rejects JSON-schema annotation keys in output_schema (HTTP 400 "field \"description\" is not supported",
+ * observed 2026-11-01). Strip them recursively; field meanings belong in the goal text.
+ */
+const UNSUPPORTED_SCHEMA_KEYS = new Set(["description", "title", "examples", "default", "$comment"]);
+export function sanitizeOutputSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(sanitizeOutputSchema);
+  if (!schema || typeof schema !== "object") return schema;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(schema as Record<string, unknown>)) {
+    if (k === "properties" && v && typeof v === "object") {
+      // property NAMES (e.g. a field called "title") are data, not annotations: keep every name, clean each value
+      out[k] = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([pk, pv]) => [pk, sanitizeOutputSchema(pv)]));
+    } else if (!UNSUPPORTED_SCHEMA_KEYS.has(k)) out[k] = sanitizeOutputSchema(v);
+  }
+  return out;
+}
+
+let agentLimiter: Limiter | null = null;
+/** Process-wide cap on paid Agent runs in flight (PP_AGENT_MAX_CONCURRENT). */
+function paidAgentLimiter(): Limiter {
+  agentLimiter ??= new Limiter(getCostConfig().agentMaxConcurrent);
+  return agentLimiter;
+}
+const stepsOf = (r: { num_of_steps?: unknown }) => (typeof r.num_of_steps === "number" && Number.isFinite(r.num_of_steps) ? r.num_of_steps : null);
+
+/**
+ * Paid TinyFish Agent run (async + poll). Gated by the daily paid-usage limits and the concurrency cap,
+ * and metered with the provider's num_of_steps. Throws TinyFishError("budget_exhausted") when a limit blocks it.
+ */
 export async function runAgent(
   p: {
     url: string;
@@ -199,46 +236,62 @@ export async function runAgent(
   },
   opts?: ClientOptions & { onRunId?: (id: string) => void },
 ): Promise<AgentRunResult> {
-  const created = await request<{ run_id?: string; error?: unknown }>(
-    `${AGENT_BASE}/automation/run-async`,
-    {
-      method: "POST",
-      body: {
-        url: p.url,
-        goal: p.goal,
-        ...(p.outputSchema ? { output_schema: p.outputSchema } : {}),
-        browser_profile: p.stealth ? "stealth" : "lite",
-        proxy_config: { enabled: true, type: "tinyfish", country_code: "IN" },
-        agent_config: { max_duration_seconds: p.maxDurationSeconds ?? 90 },
+  return paidAgentLimiter().run(async () => {
+    const gate = meter.canStartAgent();
+    if (!gate.ok) throw new TinyFishError("budget_exhausted", gate.message);
+    const created = await request<{ run_id?: string; error?: unknown }>(
+      `${AGENT_BASE}/automation/run-async`,
+      {
+        method: "POST",
+        body: {
+          url: p.url,
+          goal: p.goal,
+          ...(p.outputSchema ? { output_schema: sanitizeOutputSchema(p.outputSchema) } : {}),
+          browser_profile: p.stealth ? "stealth" : "lite",
+          proxy_config: { enabled: true, type: "tinyfish", country_code: "IN" },
+          agent_config: { max_duration_seconds: p.maxDurationSeconds ?? getCostConfig().agentMaxDurationS },
+        },
       },
-    },
-    opts,
-  );
-  if (!created.run_id) {
-    throw new TinyFishError("upstream", `TinyFish agent did not return a run_id${created.error ? `: ${JSON.stringify(created.error).slice(0, 200)}` : "."}`);
-  }
-  const runId = created.run_id;
-  opts?.onRunId?.(runId);
-  const poll = p.pollIntervalMs ?? 3000;
-  const deadline = Date.now() + (p.overallTimeoutMs ?? 120_000);
-  while (Date.now() < deadline) {
-    const r = await request<{ status: AgentStatus; result?: unknown; error?: unknown }>(
-      `${AGENT_BASE}/runs/${encodeURIComponent(runId)}`,
-      { method: "GET" },
       opts,
     );
-    if (r.status === "COMPLETED" || r.status === "FAILED" || r.status === "CANCELLED") {
-      return {
-        runId,
-        status: r.status,
-        result: r.result ?? null,
-        error: r.error ? (typeof r.error === "string" ? r.error : JSON.stringify(r.error).slice(0, 300)) : undefined,
-      };
+    if (!created.run_id) {
+      throw new TinyFishError("upstream", `TinyFish agent did not return a run_id${created.error ? `: ${JSON.stringify(created.error).slice(0, 200)}` : "."}`);
     }
-    await sleep(poll);
-  }
-  await cancelAgentRun(runId, opts).catch(() => undefined);
-  throw new TinyFishError("timeout", "TinyFish agent run timed out and was cancelled.");
+    const runId = created.run_id;
+    meter.agentStart();
+    opts?.onRunId?.(runId);
+    const poll = p.pollIntervalMs ?? 3000;
+    const deadline = Date.now() + (p.overallTimeoutMs ?? getCostConfig().agentOverallTimeoutMs);
+    try {
+      while (Date.now() < deadline) {
+        const r = await request<{ status: AgentStatus; result?: unknown; error?: unknown; num_of_steps?: unknown }>(
+          `${AGENT_BASE}/runs/${encodeURIComponent(runId)}`,
+          { method: "GET" },
+          opts,
+        );
+        if (r.status === "COMPLETED" || r.status === "FAILED" || r.status === "CANCELLED") {
+          const steps = stepsOf(r);
+          meter.agentEnd(r.status === "COMPLETED" ? "completed" : "failed", steps);
+          return {
+            runId,
+            status: r.status,
+            result: r.result ?? null,
+            error: r.error ? (typeof r.error === "string" ? r.error : JSON.stringify(r.error).slice(0, 300)) : undefined,
+            steps,
+          };
+        }
+        await sleep(poll);
+      }
+    } catch (e) {
+      meter.agentEnd("failed", null);
+      throw e;
+    }
+    await cancelAgentRun(runId, opts).catch(() => undefined);
+    // best effort: read the metered steps of the cancelled run so the spend is still counted
+    const fin = await request<{ num_of_steps?: unknown }>(`${AGENT_BASE}/runs/${encodeURIComponent(runId)}`, { method: "GET" }, { ...opts, retries: 0 }).catch(() => ({}));
+    meter.agentEnd("timeout", stepsOf(fin));
+    throw new TinyFishError("timeout", "TinyFish agent run timed out and was cancelled.");
+  });
 }
 
 export async function cancelAgentRun(runId: string, opts?: ClientOptions): Promise<void> {

@@ -77,6 +77,10 @@ export interface SearchResponse {
   runId: string;
   generatedAt: string;
   cached: boolean;
+  /** seconds since generatedAt when served from the response cache */
+  cacheAgeSeconds?: number;
+  /** what this request cost (TinyFish calls, paid agent runs/steps, cache use) */
+  usage?: import("./search").SearchUsage;
 }
 
 export interface PricePoint {

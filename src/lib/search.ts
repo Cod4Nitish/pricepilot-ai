@@ -2,8 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEnv } from "./env";
 import { TtlCache } from "./cache";
+import { getCostConfig, type CostConfig } from "./cost/config";
+import { costContext } from "./cost/context";
+import { meter, type AgentSkipReason } from "./cost/meter";
 import { discountPct, extractFromMarkdown, parseInr } from "./extract";
-import { isJunkTitle, parseMaxPrice, parseQuery, scoreListing, specFromTitle, type ParsedQuery } from "./match";
+import { isAccessoryTitle, isJunkTitle, parseMaxPrice, parseQuery, scoreListing, specFromTitle, type ParsedQuery } from "./match";
 import { RETAILERS, RETAILER_BY_ID, discoverProductLinks, isProductUrl, productKey, type RetailerConfig } from "./retailers";
 import { RunTracker } from "./runs";
 import { canonicalUrl, looksLikeUrl, validateRetailerUrl } from "./ssrf";
@@ -37,9 +40,125 @@ export function hasFullSeries(parsed: ParsedQuery, title: string): boolean {
   const squashed = title.toLowerCase().replace(/[^a-z0-9]/g, "");
   return toks.every((w) => have.has(w) || squashed.includes(w));
 }
+// Response cache (price TTL), discovery cache (which product pages a retailer search returned: stable),
+// paid-observation cache (agent-read prices per product page, price TTL) and product identity cache (spec TTL).
 const cache = new TtlCache<SearchResponse>(10 * 60_000, 100);
+const discoveryCache = new TtlCache<tf.SearchResult[]>(6 * 3600_000, 300);
+interface PriceObservation {
+  price: number;
+  mrp: number | null;
+  availability: Offer["availability"];
+  offers: string[];
+  title: string;
+  evidence?: string;
+  extra: OfferExtra;
+  verification: Offer["verification"];
+  checkedAt: string;
+}
+const observationCache = new TtlCache<PriceObservation>(15 * 60_000, 500);
+const identityCache = new TtlCache<{ title: string; imageUrl?: string }>(24 * 3600_000, 1000);
+const inflight = new Map<string, Promise<SearchResponse>>();
 export function clearSearchCache() {
   cache.clear();
+  discoveryCache.clear();
+  observationCache.clear();
+  identityCache.clear();
+  inflight.clear();
+}
+
+/**
+ * Cache/dedupe key: case, spacing, punctuation, unit spacing ("256 GB" = "256gb"), "rs"/"₹" and word order are
+ * normalised. Variant tokens (storage, RAM, colour, model numbers) are all kept, so different variants never share a key.
+ */
+export function normalizeQueryKey(q: string): string {
+  const t = q
+    .toLowerCase()
+    .replace(/[₹]/g, " rs ")
+    .replace(/(\d)\s+(gb|tb|mb|inch|in|hz|mah|w|k)\b/g, "$1$2")
+    .replace(/(\d),(?=\d)/g, "$1")
+    .replace(/[^a-z0-9.]+/g, " ")
+    .trim();
+  return [...new Set(t.split(" ").filter(Boolean))].sort().join(" ");
+}
+
+const ELECTRONICS_RE = /\b(phone|smartphone|mobile|iphone|galaxy|pixel|oneplus|redmi|poco|realme|oppo|vivo|xiaomi|iqoo|motorola|laptop|notebook|macbook|thinkpad|ideapad|vivobook|zenbook|rtx|gtx|tablet|ipad|tv|television|monitor|earbuds|airpods|headphones?|earphones?|speaker|soundbar|smartwatch|watch|camera|dslr|console|playstation|ps5|xbox|refrigerator|fridge|washing machine|air conditioner|ac|microwave|ssd|hdd|router|printer|charger|power ?bank)\b/i;
+/** Does this query ask for an electronics product (so electronics-only stores are relevant)? */
+export function isElectronicsQuery(parsed: ParsedQuery): boolean {
+  return parsed.gpu !== undefined || parsed.storageGb !== undefined || parsed.ramGb !== undefined || ELECTRONICS_RE.test(parsed.rawQuery);
+}
+
+/** What one search request cost. Counts are for this request only (0 on a cache hit / shared in-flight result). */
+export interface SearchUsage {
+  cache: "miss" | "hit" | "joined";
+  routing: CostConfig["routing"];
+  freshCheck: boolean;
+  searchCalls: number;
+  discoveryCacheHits: number;
+  fetchUrls: number;
+  agentRuns: number;
+  agentSteps: number;
+  agentRunsWithoutStepCount: number;
+  /** agent calls that threw (provider error, timeout, budget gate): kind + short message */
+  agentErrors: string[];
+  /** metered steps × configured $/step; null when no run returned a step count */
+  computedAgentUsd: number | null;
+  agentSkipped: Partial<Record<AgentSkipReason, number>>;
+  earlyStopped: boolean;
+  verifiedRetailers: string[];
+  retailersSearched: string[];
+  latencyMs: number;
+  timeToFirstVerifiedPriceMs: number | null;
+  /** Fetch freshness tolerance used for this search: a page may be served from TinyFish's cache up to this age. */
+  priceMaxAgeSeconds: number;
+}
+function newUsage(cache: SearchUsage["cache"], cfg: CostConfig, freshCheck: boolean): SearchUsage {
+  return {
+    cache,
+    routing: cfg.routing,
+    freshCheck,
+    searchCalls: 0,
+    discoveryCacheHits: 0,
+    fetchUrls: 0,
+    agentRuns: 0,
+    agentSteps: 0,
+    agentRunsWithoutStepCount: 0,
+    agentErrors: [],
+    computedAgentUsd: null,
+    agentSkipped: {},
+    earlyStopped: false,
+    verifiedRetailers: [],
+    retailersSearched: [],
+    latencyMs: 0,
+    timeToFirstVerifiedPriceMs: null,
+    priceMaxAgeSeconds: 0,
+  };
+}
+/** Wrap deps so this request's TinyFish usage is counted (global counters live in tinyfish.ts). */
+function meteredDeps(d: Deps, u: SearchUsage): Deps {
+  return {
+    search: async (p, o) => {
+      u.searchCalls++;
+      return d.search(p, o);
+    },
+    fetchPages: async (p, o) => {
+      u.fetchUrls += p.urls.length;
+      return d.fetchPages(p, o);
+    },
+    runAgent: async (p, o) => {
+      let r: tf.AgentRunResult;
+      try {
+        r = await d.runAgent(p, o);
+      } catch (e) {
+        const kind = e instanceof tf.TinyFishError ? e.kind : "error";
+        if (u.agentErrors.length < 10) u.agentErrors.push(`${kind}: ${(e as Error).message}`.slice(0, 200));
+        throw e;
+      }
+      u.agentRuns++;
+      if (typeof r.steps === "number") u.agentSteps += r.steps;
+      else u.agentRunsWithoutStepCount++;
+      return r;
+    },
+  };
 }
 
 export function offerId(retailer: RetailerId, url: string): string {
@@ -120,6 +239,18 @@ interface PipelineCtx {
   tracker: RunTracker;
   agentBudget: { left: number; creditsExhausted: boolean };
   caveats: string[];
+  cfg: CostConfig;
+  fresh: boolean;
+  usage: SearchUsage;
+  t0: number;
+  /** set when the app-side paid-usage limit blocked a run */
+  budgetBlocked: string | null;
+}
+
+function skipAgent(ctx: PipelineCtx, reason: AgentSkipReason, n = 1): void {
+  if (n <= 0) return;
+  ctx.usage.agentSkipped[reason] = (ctx.usage.agentSkipped[reason] ?? 0) + n;
+  meter.skip(reason, n);
 }
 
 type FetchIssue = "bot_blocked" | "login_required" | "other";
@@ -191,9 +322,19 @@ async function runPipeline(
   const searched = await Promise.all(
     retailers.map(async (r) => {
       const t0 = Date.now();
+      const useDiscoveryCache = ctx.cfg.routing === "adaptive" && ctx.cfg.discoveryTtlS > 0;
+      const dkey = `${r.id}|${normalizeQueryKey(searchQuery)}`;
+      const cachedResults = useDiscoveryCache ? discoveryCache.get(dkey) : undefined;
+      if (cachedResults) {
+        latency.set(r.id, Date.now() - t0);
+        ctx.usage.discoveryCacheHits++;
+        tracker.step(`${r.name}: product pages from discovery cache (${cachedResults.length} results; prices are re-read)`);
+        return { r, results: cachedResults, error: null as tf.TinyFishError | null };
+      }
       try {
         const out = await deps.search({ query: searchQuery, location: "IN", includeDomains: [r.domain] });
         latency.set(r.id, Date.now() - t0);
+        if (useDiscoveryCache && out.results.length) discoveryCache.set(dkey, out.results, ctx.cfg.discoveryTtlS * 1000);
         tracker.step(`${r.name}: search returned ${out.results.length} results`);
         return { r, results: out.results, error: null as tf.TinyFishError | null };
       } catch (e) {
@@ -293,10 +434,13 @@ async function runPipeline(
   const issues = new Map<string, FetchIssue>();
   const fetchErrs = new Map<string, string>();
   const urls = candidates.map((c) => c.url);
+  // TinyFish Fetch may serve a cached page up to `ttl` seconds old: fresh checks use 0, adaptive uses the price TTL.
+  const fetchTtl = ctx.fresh ? 0 : ctx.cfg.routing === "legacy" ? 3600 : ctx.cfg.priceTtlS;
+  ctx.usage.priceMaxAgeSeconds = Math.max(ctx.usage.priceMaxAgeSeconds, fetchTtl);
   for (let i = 0; i < urls.length; i += 10) {
     const batch = urls.slice(i, i + 10);
     try {
-      const out = await deps.fetchPages({ urls: batch, ttl: 3600, imageLinks: true });
+      const out = await deps.fetchPages({ urls: batch, ttl: fetchTtl, imageLinks: true });
       for (const p of out.results) {
         pages.set(p.url, p);
         if (p.final_url) pages.set(p.final_url, p);
@@ -330,11 +474,16 @@ async function runPipeline(
     extra: OfferExtra;
     verification: Offer["verification"];
     fetched: boolean;
+    /** when the price was observed (set for agent reads and cached observations; else now) */
+    checkedAt?: string;
+    cachedNote?: string;
+    agentTried?: boolean;
   }
   const work: Work[] = candidates.map((c) => {
     const page = pages.get(c.url);
     if (!page?.text) {
-      return { c, title: c.searchTitle, price: null, mrp: null, availability: "unknown", offers: [], extra: {}, verification: "unverified", fetched: false };
+      const id = identityCache.get(canonicalUrl(c.url));
+      return { c, title: id?.title ?? c.searchTitle, imageUrl: id?.imageUrl, price: null, mrp: null, availability: "unknown", offers: [], extra: {}, verification: "unverified", fetched: false };
     }
     const ex = extractFromMarkdown(page.text, { title: page.title, description: page.description, imageLinks: page.image_links });
     return {
@@ -358,47 +507,176 @@ async function runPipeline(
       fetched: true,
     } satisfies Work;
   });
-
-  // 4. agent fallback (bounded), only for fetched-or-unfetched pages that are not bot blocked / login walls
-  //    One run per retailer first (retailers whose Fetch never shows a price go first) so one retailer cannot starve the others.
-  const needAgent = work.filter((w) => w.price === null && issues.get(w.c.url) !== "bot_blocked" && issues.get(w.c.url) !== "login_required");
-  const toRun = pickAgentWork(needAgent, ctx.agentBudget);
-  if (needAgent.length > toRun.length) {
-    ctx.caveats.push(`Price not read for ${needAgent.length - toRun.length} listing(s): the per-search browser-agent limit (${MAX_AGENT_RUNS}) was reached to protect cost.`);
+  for (const w of work) {
+    if (w.fetched && !isJunkTitle(w.title)) identityCache.set(canonicalUrl(w.c.url), { title: w.title, imageUrl: w.imageUrl }, ctx.cfg.specTtlS * 1000);
   }
-  await Promise.all(
-    toRun.map(async (w) => {
-      try {
-        tracker.step(`${w.c.retailer.name}: using browser agent for price`);
-        const r = await deps.runAgent({ url: w.c.url, goal: AGENT_GOAL, outputSchema: AGENT_SCHEMA, stealth: !w.c.retailer.fetchHasPrice, maxDurationSeconds: 90, overallTimeoutMs: 110_000 });
-        if (r.status !== "COMPLETED") {
-          tracker.step(`${w.c.retailer.name}: agent ${r.status.toLowerCase()}${r.error ? ` (${r.error})` : ""}`, "warn");
-          return;
-        }
-        const p = agentResultSchema.safeParse(unwrapAgentResult(r.result));
-        if (!p.success || p.data.price === null) {
-          tracker.step(`${w.c.retailer.name}: agent could not read a price`, "warn");
-          return;
-        }
-        w.price = p.data.price;
-        w.mrp = p.data.mrp !== null && p.data.mrp > p.data.price ? p.data.mrp : null;
-        if (p.data.title) w.title = richerTitle(p.data.title, w.title);
-        if (p.data.seller) w.extra.seller = p.data.seller;
-        if (p.data.deliveryText) w.extra.deliveryText = p.data.deliveryText;
-        if (p.data.offers?.length) w.offers = p.data.offers.slice(0, 8);
-        const av = (p.data.availability ?? "").toLowerCase();
-        w.availability = /out/.test(av) ? "out_of_stock" : /in[_ ]?stock|available/.test(av) ? "in_stock" : w.availability;
-        w.verification = "agent_verified";
-        w.evidence = `Read by browser agent from live page: price ₹${p.data.price}`;
-      } catch (e) {
-        if (e instanceof tf.TinyFishError && e.kind === "insufficient_credits") {
-          ctx.agentBudget.creditsExhausted = true;
-          ctx.caveats.push("TinyFish credits ran out during browser-agent verification.");
-        }
-        tracker.step(`${w.c.retailer.name}: agent failed (${(e as Error).message})`, "error");
+  const strongMatch = (w: Work) => {
+    const m = scoreListing(parsed, w.title);
+    return !m.hardExcluded && m.confidence >= ctx.cfg.agentMinMatchConfidence && !isAccessoryTitle(w.title);
+  };
+  const markFirstPrice = () => {
+    if (ctx.usage.timeToFirstVerifiedPriceMs === null && work.some((w) => w.price !== null && strongMatch(w))) ctx.usage.timeToFirstVerifiedPriceMs = Date.now() - ctx.t0;
+  };
+  markFirstPrice();
+
+  // 4. paid Agent fallback.
+  const isBlocked = (w: Work) => issues.get(w.c.url) === "bot_blocked" || issues.get(w.c.url) === "login_required";
+  const agentRead = async (w: Work) => {
+    w.agentTried = true;
+    try {
+      tracker.step(`${w.c.retailer.name}: using paid browser agent for price`);
+      const r = await deps.runAgent({
+        url: w.c.url,
+        goal: AGENT_GOAL,
+        outputSchema: AGENT_SCHEMA,
+        stealth: !w.c.retailer.fetchHasPrice,
+        maxDurationSeconds: ctx.cfg.routing === "legacy" ? 90 : ctx.cfg.agentMaxDurationS,
+        overallTimeoutMs: ctx.cfg.routing === "legacy" ? 110_000 : ctx.cfg.agentOverallTimeoutMs,
+      });
+      if (r.status !== "COMPLETED") {
+        tracker.step(`${w.c.retailer.name}: agent ${r.status.toLowerCase()}${r.error ? ` (${r.error})` : ""}`, "warn");
+        return;
       }
-    }),
-  );
+      const p = agentResultSchema.safeParse(unwrapAgentResult(r.result));
+      if (!p.success || p.data.price === null) {
+        tracker.step(`${w.c.retailer.name}: agent could not read a price`, "warn");
+        return;
+      }
+      w.price = p.data.price;
+      w.mrp = p.data.mrp !== null && p.data.mrp > p.data.price ? p.data.mrp : null;
+      if (p.data.title) w.title = richerTitle(p.data.title, w.title);
+      if (p.data.seller) w.extra.seller = p.data.seller;
+      if (p.data.deliveryText) w.extra.deliveryText = p.data.deliveryText;
+      if (p.data.offers?.length) w.offers = p.data.offers.slice(0, 8);
+      const av = (p.data.availability ?? "").toLowerCase();
+      w.availability = /out/.test(av) ? "out_of_stock" : /in[_ ]?stock|available/.test(av) ? "in_stock" : w.availability;
+      w.verification = "agent_verified";
+      w.evidence = `Read by browser agent from live page: price ₹${p.data.price}`;
+      w.checkedAt = now();
+      markFirstPrice();
+      if (ctx.cfg.routing === "adaptive" && ctx.cfg.priceTtlS > 0) {
+        observationCache.set(
+          productKey(w.c.retailer.id, w.c.url) ?? canonicalUrl(w.c.url),
+          { price: w.price, mrp: w.mrp, availability: w.availability, offers: w.offers, title: w.title, evidence: w.evidence, extra: { ...w.extra }, verification: w.verification, checkedAt: w.checkedAt },
+          ctx.cfg.priceTtlS * 1000,
+        );
+      }
+    } catch (e) {
+      if (e instanceof tf.TinyFishError && e.kind === "insufficient_credits") {
+        ctx.agentBudget.creditsExhausted = true;
+        ctx.caveats.push("TinyFish credits ran out during browser-agent verification.");
+      } else if (e instanceof tf.TinyFishError && e.kind === "budget_exhausted") {
+        ctx.budgetBlocked = e.message;
+      }
+      tracker.step(`${w.c.retailer.name}: agent not run or failed (${(e as Error).message})`, "error");
+    }
+  };
+
+  const agentSkippedRetailers = new Map<RetailerId, AgentSkipReason>();
+  if (ctx.cfg.routing === "legacy") {
+    // Legacy routing (before the cost sprint): any unpriced, non-blocked listing, up to MAX_AGENT_RUNS, round-robin by retailer.
+    const needAgent = work.filter((w) => w.price === null && !isBlocked(w));
+    const toRun = pickAgentWork(needAgent, ctx.agentBudget);
+    if (needAgent.length > toRun.length) {
+      ctx.caveats.push(`Price not read for ${needAgent.length - toRun.length} listing(s): the per-search browser-agent limit (${MAX_AGENT_RUNS}) was reached to protect cost.`);
+    }
+    await Promise.all(toRun.map(agentRead));
+  } else {
+    // Adaptive routing: Agent only for a listing whose price Fetch could not read, that strongly matches the query,
+    // at a relevant retailer with no verified price yet, within per-search and daily budgets. Stops early once
+    // `targetVerifiedRetailers` distinct retailers have a verified price.
+    const electronics = isElectronicsQuery(parsed);
+    const pool: Work[] = [];
+    const seenKeys = new Set<string>();
+    for (const w of [...work].filter((x) => x.price === null).sort((a, b) => b.c.prescore - a.c.prescore)) {
+      const reason: AgentSkipReason | null = isBlocked(w)
+        ? "blocked_or_login"
+        : !strongMatch(w)
+          ? "low_match_confidence"
+          : w.c.retailer.electronicsOnly && !electronics
+            ? "not_relevant_retailer"
+            : null;
+      if (reason) {
+        skipAgent(ctx, reason);
+        continue;
+      }
+      const key = productKey(w.c.retailer.id, w.c.url) ?? canonicalUrl(w.c.url);
+      if (seenKeys.has(key)) {
+        skipAgent(ctx, "duplicate_product");
+        continue;
+      }
+      seenKeys.add(key);
+      const obs = ctx.fresh ? undefined : observationCache.get(key);
+      if (obs) {
+        Object.assign(w, { price: obs.price, mrp: obs.mrp, availability: obs.availability, offers: obs.offers, title: obs.title, evidence: obs.evidence, verification: obs.verification, checkedAt: obs.checkedAt });
+        w.extra = { ...w.extra, ...obs.extra };
+        w.cachedNote = `Price observed by the browser agent at ${obs.checkedAt} (cached observation, not re-checked now).`;
+        skipAgent(ctx, "cached_observation");
+        tracker.step(`${w.c.retailer.name}: reused agent price observed at ${obs.checkedAt}`);
+        markFirstPrice();
+        continue;
+      }
+      pool.push(w);
+    }
+    const verifiedRetailers = () => new Set(work.filter((w) => w.price !== null && strongMatch(w)).map((w) => w.c.retailer.id));
+    let started = 0;
+    let stop: AgentSkipReason | null = null;
+    for (;;) {
+      const have = verifiedRetailers();
+      const remaining = pool.filter((w) => !w.agentTried && w.price === null && !have.has(w.c.retailer.id));
+      if (!remaining.length) break;
+      if (have.size >= ctx.cfg.targetVerifiedRetailers) {
+        stop = "target_met";
+        break;
+      }
+      if (ctx.agentBudget.creditsExhausted) {
+        stop = "credits_exhausted";
+        break;
+      }
+      if (ctx.budgetBlocked) {
+        stop = /run limit/.test(ctx.budgetBlocked) ? "daily_run_cap" : "daily_budget";
+        break;
+      }
+      const capLeft = ctx.cfg.agentMaxPerSearch - started;
+      if (capLeft <= 0) {
+        stop = "per_search_cap";
+        break;
+      }
+      const want = Math.min(ctx.cfg.targetVerifiedRetailers - have.size, capLeft);
+      const wave: Work[] = [];
+      const used = new Set<RetailerId>();
+      for (const w of remaining) {
+        if (used.has(w.c.retailer.id)) continue;
+        used.add(w.c.retailer.id);
+        wave.push(w);
+        if (wave.length >= want) break;
+      }
+      started += wave.length;
+      await Promise.all(wave.map(agentRead));
+    }
+    const haveEnd = verifiedRetailers();
+    const untried = pool.filter((w) => !w.agentTried && w.price === null);
+    for (const w of untried) {
+      const reason: AgentSkipReason = haveEnd.has(w.c.retailer.id) ? "retailer_already_verified" : (stop ?? "per_search_cap");
+      skipAgent(ctx, reason);
+      if (!haveEnd.has(w.c.retailer.id)) agentSkippedRetailers.set(w.c.retailer.id, reason);
+    }
+    const notChecked = untried.filter((w) => !haveEnd.has(w.c.retailer.id)).length;
+    if (stop === "target_met" && notChecked) {
+      ctx.usage.earlyStopped = true;
+      ctx.caveats.push(
+        `Stopped early to control cost: ${haveEnd.size} retailers already had verified prices, so ${notChecked} listing(s) at other retailers were not checked with the paid browser agent. A lower price there is possible.`,
+      );
+    } else if (stop && stop !== "target_met" && notChecked) {
+      const why =
+        stop === "per_search_cap"
+          ? `the per-search paid agent limit (${ctx.cfg.agentMaxPerSearch}) was reached`
+          : stop === "credits_exhausted"
+            ? "TinyFish credits are exhausted"
+            : (ctx.budgetBlocked ?? "the daily paid-usage limit was reached");
+      ctx.caveats.push(`Price not read for ${notChecked} listing(s): ${why}.`);
+    }
+  }
 
   // 5. build offers (dedupe: same product key, or same retailer + title + price; verified rows win)
   const seenOffer = new Set<string>();
@@ -417,8 +695,9 @@ async function runPipeline(
       conf = Math.min(conf, 0.3);
     }
     if (w.price === null) notes.push("Price could not be confirmed from the page.");
+    if (w.cachedNote) notes.push(w.cachedNote);
     offers.push(
-      makeOffer(w.c.retailer, w.c.url, w.title, w.price, w.mrp, w.availability, w.offers, m.spec, m.hardExcluded ? 0 : conf, notes, w.verification, now(), w.imageUrl, w.evidence, w.extra),
+      makeOffer(w.c.retailer, w.c.url, w.title, w.price, w.mrp, w.availability, w.offers, m.spec, m.hardExcluded ? 0 : conf, notes, w.verification, w.checkedAt ?? now(), w.imageUrl, w.evidence, w.extra),
     );
   }
 
@@ -446,7 +725,14 @@ async function runPipeline(
     } else {
       state = mine.some((w) => w.fetched) ? "partial" : "error";
       const why = [...new Set(mine.map((w) => fetchErrs.get(w.c.url)).filter(Boolean))].join(", ");
-      message = `Found ${mine.length} product page(s) but could not read a price${why ? ` (${why})` : ""}.${r.proven ? "" : " This retailer integration is not fully proven yet."}`;
+      const skipped = agentSkippedRetailers.get(r.id);
+      const skipNote =
+        skipped === "target_met"
+          ? " Not checked with the paid browser agent: enough other retailers were already verified (cost control)."
+          : skipped
+            ? " Not checked with the paid browser agent (paid-usage limit)."
+            : "";
+      message = `Found ${mine.length} product page(s) but could not read a price${why ? ` (${why})` : ""}.${skipNote}${r.proven ? "" : " This retailer integration is not fully proven yet."}`;
     }
     statusBy.set(r.id, { retailer: r.id, retailerName: r.name, state, message, offerCount: priced.length, latencyMs: latency.get(r.id) });
   }
@@ -551,23 +837,87 @@ export class SearchInputError extends Error {
   name = "SearchInputError";
 }
 
-export async function searchProducts(
-  rawQuery: string,
-  opts: { userId?: string; deps?: Deps; skipCache?: boolean; persist?: boolean } = {},
-): Promise<SearchResponse> {
+export interface SearchOptions {
+  userId?: string;
+  deps?: Deps;
+  /** bypass the response cache AND in-flight sharing (cron refresh, benchmarks) */
+  skipCache?: boolean;
+  persist?: boolean;
+  /** user-triggered fresh check: no response/observation cache, TinyFish Fetch ttl 0 */
+  fresh?: boolean;
+  /** override PP_ROUTING (benchmarks / tests only) */
+  routing?: CostConfig["routing"];
+}
+
+/**
+ * Cost-aware entry point: response cache -> shared in-flight work -> pipeline (discovery cache -> Search -> Fetch ->
+ * paid Agent only when justified). Cached responses keep their original timestamps and say they are cached.
+ */
+export async function searchProducts(rawQuery: string, opts: SearchOptions = {}): Promise<SearchResponse> {
+  const store = costContext.getStore();
+  const r = await searchProductsInner(rawQuery, { ...opts, fresh: opts.fresh ?? store?.fresh });
+  if (store && r.usage) store.usages.push(r.usage);
+  return r;
+}
+
+async function searchProductsInner(rawQuery: string, opts: SearchOptions): Promise<SearchResponse> {
   const query = rawQuery.trim();
   if (!query) throw new SearchInputError("Query is empty.");
-  const deps = opts.deps ?? defaultDeps;
   if (!opts.deps) requireEnv("TINYFISH_API_KEY");
+  const base = getCostConfig();
+  const cfg: CostConfig = opts.routing ? { ...base, routing: opts.routing } : base;
+  const fresh = !!opts.fresh;
+  const ck = `${cfg.routing}|${normalizeQueryKey(query)}`;
 
-  const ck = query.toLowerCase().replace(/\s+/g, " ");
-  if (!opts.skipCache) {
+  if (!opts.skipCache && !fresh) {
     const hit = cache.get(ck);
-    if (hit) return { ...hit, cached: true };
+    if (hit) {
+      meter.searchStarted("hit", false);
+      return {
+        ...hit,
+        cached: true,
+        cacheAgeSeconds: Math.max(0, Math.round((Date.now() - Date.parse(hit.generatedAt)) / 1000)),
+        usage: { ...newUsage("hit", cfg, false), verifiedRetailers: hit.usage?.verifiedRetailers ?? [], retailersSearched: hit.usage?.retailersSearched ?? [] },
+      };
+    }
   }
+  const fk = fresh ? `${ck}|fresh` : ck;
+  if (!opts.skipCache) {
+    const running = inflight.get(fk);
+    if (running) {
+      meter.searchStarted("joined", fresh);
+      const r = await running;
+      return { ...r, usage: { ...newUsage("joined", cfg, fresh), verifiedRetailers: r.usage?.verifiedRetailers ?? [], retailersSearched: r.usage?.retailersSearched ?? [] } };
+    }
+  }
+  meter.searchStarted("miss", fresh);
+  const p = runSearch(query, opts, cfg, fresh, ck);
+  if (!opts.skipCache) {
+    inflight.set(fk, p);
+    p.then(
+      () => inflight.delete(fk),
+      () => inflight.delete(fk),
+    );
+  }
+  return p;
+}
 
+async function runSearch(query: string, opts: SearchOptions, cfg: CostConfig, fresh: boolean, ck: string): Promise<SearchResponse> {
+  const t0 = Date.now();
+  const usage = newUsage("miss", cfg, fresh);
+  const deps = meteredDeps(opts.deps ?? defaultDeps, usage);
   const tracker = new RunTracker("search", randomUUID());
-  const ctx: PipelineCtx = { deps, tracker, agentBudget: { left: MAX_AGENT_RUNS, creditsExhausted: false }, caveats: [] };
+  const ctx: PipelineCtx = {
+    deps,
+    tracker,
+    agentBudget: { left: cfg.routing === "legacy" ? MAX_AGENT_RUNS : cfg.agentMaxPerSearch, creditsExhausted: false },
+    caveats: [],
+    cfg,
+    fresh,
+    usage,
+    t0,
+    budgetBlocked: null,
+  };
   try {
     let parsed: ParsedQuery;
     let all: Offer[] = [];
@@ -638,10 +988,19 @@ export async function searchProducts(
     const order = RETAILERS.map((r) => r.id);
     statuses.sort((a, b) => order.indexOf(a.retailer) - order.indexOf(b.retailer));
     const resp = buildResponse({ query, parsed, all, statuses, runId: tracker.id, extraCaveats: ctx.caveats });
-    tracker.step(`Done: ${resp.offers.length} matches, ${resp.excluded.length} excluded`);
+    usage.latencyMs = Date.now() - t0;
+    usage.retailersSearched = statuses.filter((s) => s.state !== "disabled").map((s) => s.retailer);
+    usage.verifiedRetailers = [
+      ...new Set(resp.offers.filter((o) => o.price !== null && (o.verification === "verified" || o.verification === "agent_verified") && o.matchConfidence >= 0.8).map((o) => o.retailer)),
+    ];
+    usage.computedAgentUsd =
+      usage.agentRuns === 0 ? 0 : usage.agentRuns === usage.agentRunsWithoutStepCount ? null : Math.round(usage.agentSteps * cfg.usdPerAgentStep * 10_000) / 10_000;
+    resp.usage = usage;
+    meter.searchFinished({ latencyMs: usage.latencyMs, ttfrMs: usage.timeToFirstVerifiedPriceMs, retailersSearched: usage.retailersSearched, retailersVerified: usage.verifiedRetailers });
+    tracker.step(`Done: ${resp.offers.length} matches, ${resp.excluded.length} excluded; paid agent runs ${usage.agentRuns}`);
     await tracker.finish();
     const allFailed = statuses.length > 0 && statuses.every((s) => s.state === "error");
-    if (!allFailed) cache.set(ck, resp);
+    if (!allFailed && cfg.priceTtlS > 0) cache.set(ck, resp, cfg.priceTtlS * 1000);
     if (opts.persist !== false) await persistSearch(resp, opts.userId);
     return resp;
   } catch (e) {

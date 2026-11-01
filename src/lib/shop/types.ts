@@ -157,6 +157,8 @@ export interface ShopResponse {
   runId: string;
   generatedAt: string;
   cached: boolean;
+  /** measured TinyFish usage + calculated agent cost for this request */
+  usage?: import("@/lib/cost/context").UsageSummary;
 }
 
 /**
